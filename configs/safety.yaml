@@ -1,0 +1,15 @@
+allowed_chats:
+  - CUA-Lark-Test
+allowed_contacts:
+  - Tester A
+  - Tester B
+allowed_doc_folders:
+  - CUA-Lark-Test-Docs
+allowed_calendar_keywords:
+  - CUA-Lark
+forbidden_actions:
+  - message_external_contacts
+  - invite_external_users
+  - share_public_link
+  - delete_real_docs
+  - mass_send

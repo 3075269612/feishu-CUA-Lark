@@ -1,0 +1,13 @@
+id: docs_create_doc_001
+product: docs
+instruction: "在测试目录中新建 CUA-Lark 文档"
+slots:
+  folder_name: "CUA-Lark-Test-Docs"
+  title: "CUA-Lark Mock Doc {{run_id}}"
+success_criteria:
+  - type: visual_text_exists
+    text: "CUA-Lark Mock Doc"
+limits:
+  max_steps: 30
+  timeout_sec: 120
+risk_level: low

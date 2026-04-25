@@ -1,0 +1,27 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.pytest_tmp/
+.pytest_tmp_root/
+.pytest_tmp_manual/
+pytest-cache-files-*/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+
+runs/
+dist/
+build/
+*.egg-info/
+
+CUA-Lark.pdf
+最终方案.docx
+CUA-Lark · 让大模型像人一样操作飞书桌面端 .docx

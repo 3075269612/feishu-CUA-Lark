@@ -1,0 +1,14 @@
+id: calendar_create_event_001
+product: calendar
+instruction: "创建一个标题包含 CUA-Lark 的测试日程"
+slots:
+  title: "CUA-Lark Mock Event {{run_id}}"
+  start_time: "tomorrow 15:00"
+  end_time: "tomorrow 15:30"
+success_criteria:
+  - type: visual_text_exists
+    text: "CUA-Lark Mock Event"
+limits:
+  max_steps: 30
+  timeout_sec: 120
+risk_level: low

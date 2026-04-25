@@ -1,0 +1,16 @@
+[project]
+name = "cua-lark"
+version = "0.1.0"
+description = "Visual-first CUA testing scaffold for Feishu/Lark desktop."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic",
+  "PyYAML",
+  "pytest",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-p no:cacheprovider"

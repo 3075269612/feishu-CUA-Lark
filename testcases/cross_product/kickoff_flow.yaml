@@ -1,0 +1,14 @@
+id: cross_product_kickoff_001
+product: cross_product
+instruction: "执行 CUA-Lark 项目启动的 IM、Calendar、Docs mock 链路"
+slots:
+  chat_name: "CUA-Lark-Test"
+  event_title: "CUA-Lark Kickoff {{run_id}}"
+  folder_name: "CUA-Lark-Test-Docs"
+success_criteria:
+  - type: visual_text_exists
+    text: "CUA-Lark"
+limits:
+  max_steps: 60
+  timeout_sec: 240
+risk_level: low

@@ -1,0 +1,6 @@
+app_name: Feishu
+window_title_hint: Feishu
+resolution:
+  width: 1440
+  height: 900
+mock_mode_default: true

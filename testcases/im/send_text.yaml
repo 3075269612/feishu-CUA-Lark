@@ -1,0 +1,16 @@
+id: im_send_text_001
+product: im
+instruction: "在 CUA-Lark-Test 群发送消息：Hello from CUA-Lark"
+slots:
+  chat_name: "CUA-Lark-Test"
+  message: "Hello from CUA-Lark {{run_id}}"
+success_criteria:
+  - type: visual_text_exists
+    text: "Hello from CUA-Lark"
+  - type: im_message_exists_api_optional
+    chat_name: "CUA-Lark-Test"
+    text_contains: "Hello from CUA-Lark"
+limits:
+  max_steps: 30
+  timeout_sec: 120
+risk_level: low

@@ -1,0 +1,5 @@
+provider: mock
+vlm_model: mock-vlm
+ocr_engine: mock-ocr
+temperature: 0
+timeout_sec: 30

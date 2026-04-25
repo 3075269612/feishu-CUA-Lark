@@ -1,0 +1,4 @@
+tenant: test
+api_base_url: https://open.feishu.cn/open-apis
+use_api_for_execution: false
+use_api_for_verification: true
