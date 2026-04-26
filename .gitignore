@@ -4,6 +4,7 @@ __pycache__/
 .pytest_tmp/
 .pytest_tmp_root/
 .pytest_tmp_manual/
+.build_meta_tmp/
 pytest-cache-files-*/
 .mypy_cache/
 .ruff_cache/
@@ -25,3 +26,4 @@ build/
 CUA-Lark.pdf
 最终方案.docx
 CUA-Lark · 让大模型像人一样操作飞书桌面端 .docx
+~$*.docx

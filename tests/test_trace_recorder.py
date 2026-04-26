@@ -29,3 +29,35 @@ def test_trace_recorder_writes_run_artifacts(tmp_path: Path) -> None:
     assert (trace_dir / "step_001.json").exists()
     assert report_path.exists()
     assert "Status: `pass`" in report_path.read_text(encoding="utf-8")
+
+
+def test_trace_recorder_keeps_real_ui_metadata(tmp_path: Path) -> None:
+    task = TaskSpec(id="trace_real", product="im", instruction="mock", slots={"chat_name": "CUA-Lark-Test"})
+    recorder = TraceRecorder(base_dir=tmp_path)
+    trace = recorder.start(task, run_id="run_001")
+    observation = Observation(
+        step_index=1,
+        screen_summary="coordinate plan",
+        screenshot_path="before.png",
+        metadata={
+            "coordinate_source": "config_fixed_anchor",
+            "base_resolution": [1440, 900],
+            "actual_resolution": [1440, 900],
+            "scale_x": 1.0,
+            "scale_y": 1.0,
+        },
+    )
+    action = Action(type="coordinate_plan", target="im_anchors", metadata=observation.metadata)
+    verdict = Verdict(status="pass", reason="coordinates_planned", evidence=observation.metadata)
+
+    recorder.record_step(trace, observation, action, verdict)
+
+    payload = (tmp_path / "trace_real_run_001" / "step_001.json").read_text(encoding="utf-8")
+    assert "config_fixed_anchor" in payload
+    assert "scale_x" in payload
+
+
+def test_observation_screenshot_path_can_be_none() -> None:
+    observation = Observation(step_index=1, screen_summary="no screenshot", screenshot_path=None)
+
+    assert observation.screenshot_path is None

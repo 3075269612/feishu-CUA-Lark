@@ -1,33 +1,49 @@
-# Roadmap
+# 路线图
 
-## Phase 0: Environment And Safety Boundaries
+## Phase 0：环境与安全边界
 
-Prepare test tenant, test accounts, test group `CUA-Lark-Test`, test contacts, doc folders, calendar naming rules, desktop resolution, login state, secrets, and allowlists.
+准备测试租户、测试账号、测试群 `CUA-Lark-Test`、测试联系人、测试文档目录、日历关键词、桌面分辨率、登录态和 allowlist。
 
-## Phase 1: Atomic Operations And Mock Loop
+状态：已完成基础配置和 SafetyGuard。
 
-Build task loading, safety checks, mock planning, mock action execution, trace recording, and Markdown reports.
+## Phase 1：原子操作与 mock 闭环
 
-## Phase 2: IM Send Message Loop
+完成 YAML 加载、安全检查、mock Planner / Actor / Verifier、trace 记录和 Markdown 报告。
 
-Drive the real desktop UI to search the test group, send text, verify visually, and optionally verify by Feishu OpenAPI.
+状态：已完成，`--mock` 作为回归基线保留。
 
-## Phase 3: Hybrid Grounding
+## Phase 2A：安全真实 IM 执行
 
-Combine VLM bbox, OCR text boxes, and Accessibility candidates. Prefer visual grounding, then snap to structural candidates when confidence is high.
+目标是打通最小真实桌面链路：窗口聚焦、截图、固定坐标缩放、dry-run 记录、可选真实发送。
 
-## Phase 4: Calendar
+已实现：
 
-Create, modify, and delete test calendar events whose titles include allowed CUA-Lark keywords.
+- 三层开关：`--real-ui`、`--confirm-target`、`--allow-send`。
+- `--dry-run` 不输入、不粘贴、不发送。
+- 最终发送前二次 SafetyGuard。
+- 坐标缩放、边界检查和 trace 元数据。
+- 真实发送结果使用 `sent_with_screenshot_evidence`，不做自动强 pass。
 
-## Phase 5: Docs
+## Phase 2B：IM 自动验证
 
-Create test documents, edit title/body content, and verify metadata/content without touching real folders.
+接入 OCR 或 VLM 进行消息气泡验证，再接入飞书 OpenAPI optional oracle。只有视觉/OCR/API 证据足够时才升级为自动 pass/fail。
 
-## Phase 6: Cross Product Chain
+## Phase 3：混合定位
 
-Connect IM, Calendar, Docs, and IM summary steps using explicit subtask state instead of free-form agent behavior.
+组合 VLM bbox、OCR 文本框和 Accessibility 候选。视觉定位优先，结构候选只用于坐标吸附和稳定性提升。
 
-## Phase 7: Evaluation Set And Reports
+## Phase 4：Calendar
 
-Run a small FeishuWorld suite, measure success rate, step count, duration, recovery count, and visual/API agreement.
+创建、修改、删除测试日程，标题必须包含 CUA-Lark allowlist 关键词。
+
+## Phase 5：Docs
+
+创建测试文档、编辑标题/正文，并验证文档元数据和内容。
+
+## Phase 6：跨产品链路
+
+用显式子任务状态机连接 IM、Calendar、Docs 和 IM 汇总，不允许让模型自由长链路操作。
+
+## Phase 7：评测集与报告
+
+构建 FeishuWorld 小型评测集，统计成功率、平均步数、耗时、恢复次数、失败分类和视觉/API 一致性。

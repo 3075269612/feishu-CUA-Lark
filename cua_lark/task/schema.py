@@ -55,7 +55,14 @@ class Action(BaseModel):
 
 
 class Verdict(BaseModel):
-    status: Literal["pass", "fail", "blocked", "uncertain"]
+    status: Literal[
+        "pass",
+        "fail",
+        "blocked",
+        "uncertain",
+        "sent_with_screenshot_evidence",
+        "needs_manual_verification",
+    ]
     reason: str
     evidence: dict[str, Any] = Field(default_factory=dict)
     extracted_state: dict[str, Any] = Field(default_factory=dict)
@@ -74,7 +81,15 @@ class TraceEvent(BaseModel):
 class Trace(BaseModel):
     task_id: str
     run_id: str
-    status: Literal["running", "pass", "fail", "blocked", "uncertain"] = "running"
+    status: Literal[
+        "running",
+        "pass",
+        "fail",
+        "blocked",
+        "uncertain",
+        "sent_with_screenshot_evidence",
+        "needs_manual_verification",
+    ] = "running"
     trace_dir: str
     events: list[TraceEvent] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)

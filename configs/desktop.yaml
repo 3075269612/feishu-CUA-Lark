@@ -1,6 +1,28 @@
 app_name: Feishu
 window_title_hint: Feishu
+window_title_candidates:
+  - Feishu
+  - 飞书
+base_resolution:
+  width: 1440
+  height: 900
 resolution:
   width: 1440
   height: 900
 mock_mode_default: true
+im_anchors:
+  message_module:
+    description: "Left sidebar message entry"
+    point: [52, 88]
+  search_box:
+    description: "Top search input"
+    point: [300, 70]
+  first_search_result:
+    description: "First search result for target chat"
+    point: [300, 165]
+  message_input:
+    description: "Bottom message input"
+    point: [760, 820]
+  send_button:
+    description: "Send message via Enter key"
+    point: [1320, 820]

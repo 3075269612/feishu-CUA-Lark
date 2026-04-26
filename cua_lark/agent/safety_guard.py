@@ -22,6 +22,8 @@ class SafetyGuard:
     allowed_doc_folders: set[str] = field(default_factory=set)
     allowed_calendar_keywords: set[str] = field(default_factory=set)
     forbidden_actions: set[str] = field(default_factory=set)
+    require_run_id_in_message: bool = True
+    real_ui_requires_confirm_target: bool = True
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "SafetyGuard":
@@ -33,6 +35,8 @@ class SafetyGuard:
             allowed_doc_folders=set(data.get("allowed_doc_folders", [])),
             allowed_calendar_keywords=set(data.get("allowed_calendar_keywords", [])),
             forbidden_actions=set(data.get("forbidden_actions", [])),
+            require_run_id_in_message=bool(data.get("require_run_id_in_message", True)),
+            real_ui_requires_confirm_target=bool(data.get("real_ui_requires_confirm_target", True)),
         )
 
     def check_task(self, task: TaskSpec) -> SafetyDecision:
@@ -68,6 +72,35 @@ class SafetyGuard:
             return SafetyDecision(False, f"forbidden_action:{sorted(blocked)[0]}")
         if task is not None:
             return self.check_task(task)
+        return SafetyDecision(True)
+
+    def check_real_ui_run(
+        self,
+        task: TaskSpec,
+        confirm_target: str | None,
+        rendered_message: str,
+        run_id: str,
+    ) -> SafetyDecision:
+        if task.product != "im":
+            return SafetyDecision(False, f"real_ui_product_not_allowed:{task.product}")
+        if task.risk_level != "low":
+            return SafetyDecision(False, f"risk_level_not_allowed:{task.risk_level}")
+
+        task_decision = self.check_task(task)
+        if not task_decision.allowed:
+            return task_decision
+
+        chat_name = task.slots.get("chat_name")
+        if self.real_ui_requires_confirm_target and not confirm_target:
+            return SafetyDecision(False, "confirm_target_required")
+        if confirm_target != chat_name:
+            return SafetyDecision(False, f"confirm_target_mismatch:{confirm_target}!={chat_name}")
+
+        if "CUA-Lark" not in rendered_message:
+            return SafetyDecision(False, "message_missing_cua_lark_marker")
+        if self.require_run_id_in_message and run_id not in rendered_message:
+            return SafetyDecision(False, "message_missing_run_id")
+
         return SafetyDecision(True)
 
     def allow_task(self, task: TaskSpec) -> bool:

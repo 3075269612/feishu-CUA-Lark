@@ -13,3 +13,5 @@ forbidden_actions:
   - share_public_link
   - delete_real_docs
   - mass_send
+require_run_id_in_message: true
+real_ui_requires_confirm_target: true

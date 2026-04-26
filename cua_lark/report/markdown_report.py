@@ -14,10 +14,12 @@ def build_markdown_report(trace: Trace) -> str:
         f"- Status: `{trace.status}`",
         f"- Trace dir: `{trace.trace_dir}`",
         f"- Steps: `{len(step_events)}`",
-        "",
-        "## Steps",
-        "",
     ]
+    if trace.metadata:
+        lines.extend(["", "## Run Metadata", ""])
+        for key, value in trace.metadata.items():
+            lines.append(f"- {key}: `{value}`")
+    lines.extend(["", "## Steps", ""])
     for event in step_events:
         action = event.action.type if event.action else "none"
         verdict = event.verdict.status if event.verdict else "none"

@@ -17,6 +17,33 @@ def denormalize_point(nx: float, ny: float, width: float, height: float) -> tupl
     return (nx * width, ny * height)
 
 
+def scale_point(
+    point: tuple[float, float],
+    base_resolution: tuple[float, float],
+    actual_resolution: tuple[float, float],
+) -> tuple[float, float]:
+    base_width, base_height = base_resolution
+    actual_width, actual_height = actual_resolution
+    return (point[0] * actual_width / base_width, point[1] * actual_height / base_height)
+
+
+def compute_scale(
+    base_resolution: tuple[float, float],
+    actual_resolution: tuple[float, float],
+) -> tuple[float, float]:
+    base_width, base_height = base_resolution
+    actual_width, actual_height = actual_resolution
+    return (actual_width / base_width, actual_height / base_height)
+
+
+def ensure_point_in_bounds(point: tuple[float, float], screen_size: tuple[float, float]) -> tuple[int, int]:
+    x, y = point
+    width, height = screen_size
+    if x < 0 or y < 0 or x >= width or y >= height:
+        raise ValueError(f"point_out_of_bounds:{point} screen={screen_size}")
+    return int(round(x)), int(round(y))
+
+
 def iou(a: BBox, b: BBox) -> float:
     ax1, ay1, ax2, ay2 = a
     bx1, by1, bx2, by2 = b
