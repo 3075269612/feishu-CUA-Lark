@@ -18,7 +18,29 @@ def build_markdown_report(trace: Trace) -> str:
     if trace.metadata:
         lines.extend(["", "## Run Metadata", ""])
         for key, value in trace.metadata.items():
+            if key == "verification_summary":
+                continue
             lines.append(f"- {key}: `{value}`")
+    verification_summary = trace.metadata.get("verification_summary")
+    if isinstance(verification_summary, dict):
+        lines.extend(["", "## Verification Summary", ""])
+        lines.append(f"- evidence_schema_version: `{verification_summary.get('evidence_schema_version')}`")
+        lines.append(f"- final_status: `{verification_summary.get('final_status')}`")
+        lines.append(f"- reason: `{verification_summary.get('reason')}`")
+        lines.extend(["", "### Verifier Evidence", ""])
+        for evidence in verification_summary.get("evidences", []):
+            if not isinstance(evidence, dict):
+                continue
+            source = evidence.get("source")
+            status = evidence.get("status")
+            reason = evidence.get("reason")
+            confidence = evidence.get("confidence")
+            lines.append(f"- `{source}`: `{status}` ({reason}), confidence `{confidence}`")
+        checklist = verification_summary.get("manual_checklist") or []
+        if checklist:
+            lines.extend(["", "### Manual Verification Checklist", ""])
+            for item in checklist:
+                lines.append(f"- {item}")
     lines.extend(["", "## Steps", ""])
     for event in step_events:
         action = event.action.type if event.action else "none"

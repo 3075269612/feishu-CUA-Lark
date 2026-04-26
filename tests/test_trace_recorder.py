@@ -61,3 +61,32 @@ def test_observation_screenshot_path_can_be_none() -> None:
     observation = Observation(step_index=1, screen_summary="no screenshot", screenshot_path=None)
 
     assert observation.screenshot_path is None
+
+
+def test_report_renders_verification_summary(tmp_path: Path) -> None:
+    task = TaskSpec(id="trace_verify", product="im", instruction="mock", slots={"chat_name": "CUA-Lark-Test"})
+    recorder = TraceRecorder(base_dir=tmp_path)
+    trace = recorder.start(task, run_id="run_001")
+    trace.status = "needs_manual_verification"
+    trace.metadata["verification_summary"] = {
+        "evidence_schema_version": "im_verification.v1",
+        "final_status": "needs_manual_verification",
+        "reason": "verify_needs_manual_verification",
+        "evidences": [
+            {
+                "source": "screenshot",
+                "status": "pass",
+                "reason": "verify_screenshot_pass",
+                "confidence": 0.45,
+                "details": {"after_screenshot": "after.png"},
+            }
+        ],
+        "manual_checklist": ["确认群名为：CUA-Lark-Test"],
+    }
+
+    report_path = write_markdown_report(trace, Path(trace.trace_dir) / "report.md")
+    report = report_path.read_text(encoding="utf-8")
+
+    assert "## Verification Summary" in report
+    assert "im_verification.v1" in report
+    assert "确认群名为：CUA-Lark-Test" in report

@@ -15,7 +15,7 @@ from cua_lark.task.loader import load_task
 from cua_lark.task.parser import render_task
 from cua_lark.task.schema import Action, Observation, StepGoal, TaskSpec, Trace, Verdict
 from cua_lark.trace import TraceRecorder
-from cua_lark.verifier import MockVerifier
+from cua_lark.verifier import ImVerifierChain, MockVerifier
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -32,6 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--allow-send", action="store_true")
     run.add_argument("--dry-run", action="store_true")
     run.add_argument("--assume-frontmost-window", action="store_true")
+    run.add_argument("--strict-verification", action="store_true")
     return parser
 
 
@@ -144,13 +145,15 @@ def run_real_ui_task(args: argparse.Namespace) -> int:
         return 0 if args.dry_run and status in {"uncertain", "needs_manual_verification"} else 1
 
     final_status = _real_ui_final_send(args, task, trace, recorder, backend, safety, message, run_id, context)
+    if final_status == "sent_with_screenshot_evidence":
+        final_status = _real_ui_verify_after_send(args, task, trace, recorder, message, run_id)
     recorder.finalize(trace, final_status)
     report_path = recorder.write_report(trace)
     print("Real UI run completed.")
     print(f"Status: {trace.status}")
     print(f"Trace dir: {trace.trace_dir}")
     print(f"Report: {report_path}")
-    return _exit_code_for_status(final_status, dry_run=args.dry_run)
+    return _exit_code_for_status(final_status, dry_run=args.dry_run, strict=args.strict_verification)
 
 
 def _real_ui_prepare_and_act(
@@ -313,6 +316,30 @@ def _real_ui_final_send(
     return status
 
 
+def _real_ui_verify_after_send(
+    args: argparse.Namespace,
+    task: TaskSpec,
+    trace: Trace,
+    recorder: TraceRecorder,
+    message: str,
+    run_id: str,
+) -> str:
+    step_index = max((event.step_index or 0 for event in trace.events), default=0) + 1
+    verifier = ImVerifierChain(config=load_feishu_verification_config(args))
+    verdict = verifier.verify(task, trace, message, run_id, dry_run=args.dry_run)
+    trace.metadata["verification_summary"] = verdict.evidence
+    trace.metadata["verification_final_status"] = verdict.status
+    _record_real_step(
+        recorder,
+        trace,
+        step_index,
+        "Verify IM send result",
+        Action(type="verify_im_send", target=task.slots.get("chat_name"), mock=args.dry_run, metadata={"verification": verdict.evidence}),
+        verdict,
+    )
+    return verdict.status
+
+
 def _execute_pre_send_action(
     backend: Any,
     planned_points: dict[str, tuple[int, int]],
@@ -355,8 +382,10 @@ def _record_real_step(
     recorder.record_step(trace, observation, action, verdict)
 
 
-def _exit_code_for_status(status: str, dry_run: bool = False) -> int:
-    if status in {"pass", "sent_with_screenshot_evidence"}:
+def _exit_code_for_status(status: str, dry_run: bool = False, strict: bool = False) -> int:
+    if strict:
+        return 0 if status == "pass" else 1
+    if status in {"pass", "sent_with_screenshot_evidence", "needs_manual_verification"}:
         return 0
     if dry_run and status in {"uncertain", "needs_manual_verification"}:
         return 0
@@ -418,6 +447,18 @@ def _plan_coordinates(desktop_config: dict[str, Any], backend: Any, screenshot_m
 def load_desktop_config(path: str | Path) -> dict[str, Any]:
     with Path(path).open("r", encoding="utf-8") as fh:
         return yaml.safe_load(fh) or {}
+
+
+def load_feishu_verification_config(args: argparse.Namespace) -> dict[str, Any]:
+    try:
+        with Path("configs/feishu.yaml").open("r", encoding="utf-8") as fh:
+            data = yaml.safe_load(fh) or {}
+    except FileNotFoundError:
+        data = {}
+    verification = data.get("verification", {})
+    if not isinstance(verification, dict):
+        verification = {}
+    return verification
 
 
 def _config_screen_size(config: dict[str, Any]) -> tuple[int, int]:

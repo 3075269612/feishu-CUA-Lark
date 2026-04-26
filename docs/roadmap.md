@@ -26,7 +26,9 @@
 
 ## Phase 2B：IM 自动验证
 
-接入 OCR 或 VLM 进行消息气泡验证，再接入飞书 OpenAPI optional oracle。只有视觉/OCR/API 证据足够时才升级为自动 pass/fail。
+实现可插拔 IM verifier chain：截图证据、任务验收项、optional API oracle、OCR/VLM placeholder。未配置 token 或未启用模型时 verifier 返回 skipped，不报错。
+
+状态：已实现验证骨架和报告。只有 API/OCR/VLM 等自动 verifier 明确通过时才给自动 pass；仅截图证据通过时给 `needs_manual_verification`。
 
 ## Phase 3：混合定位
 
