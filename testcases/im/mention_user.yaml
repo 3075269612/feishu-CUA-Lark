@@ -1,0 +1,17 @@
+id: im_mention_user_001
+product: im
+instruction: "在 CUA-Lark-Test 群 @成员并发送消息"
+slots:
+  chat_name: "CUA-Lark-Test"
+  mention_name: "CUA-Lark-Test"
+  message: "@CUA-Lark-Test hello {{run_id}}"
+success_criteria:
+  - type: visual_text_exists
+    text: "@CUA-Lark-Test"
+  - type: im_message_exists_api_optional
+    chat_name: "CUA-Lark-Test"
+    text_contains: "hello"
+limits:
+  max_steps: 35
+  timeout_sec: 120
+risk_level: low

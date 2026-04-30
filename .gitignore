@@ -1,9 +1,7 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
-.pytest_tmp/
-.pytest_tmp_root/
-.pytest_tmp_manual/
+.pytest_tmp*/
 .build_meta_tmp/
 pytest-cache-files-*/
 .mypy_cache/
@@ -12,18 +10,32 @@ pytest-cache-files-*/
 htmlcov/
 
 .venv/
+.venv*/
+.conda*/
+.tmp_pip/
 venv/
 env/
 .env
 .env.*
 !.env.example
+configs/secrets.local.yaml
 
 runs/
 dist/
 build/
 *.egg-info/
+.claude/
 
+# IDE and Editor
+.vscode/settings.json
+.vscode/.copilot
+
+# Documents and temp files
 CUA-Lark.pdf
 最终方案.docx
 CUA-Lark · 让大模型像人一样操作飞书桌面端 .docx
 ~$*.docx
+
+# OS temp files
+*.tmp
+Thumbs.db

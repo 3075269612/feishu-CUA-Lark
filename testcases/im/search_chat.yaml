@@ -1,0 +1,13 @@
+id: im_search_chat_001
+product: im
+instruction: "搜索并打开 CUA-Lark-Test 群"
+slots:
+  chat_name: "CUA-Lark-Test"
+  search_query: "CUA-Lark-Test"
+success_criteria:
+  - type: visual_text_exists
+    text: "CUA-Lark-Test"
+limits:
+  max_steps: 20
+  timeout_sec: 90
+risk_level: low

@@ -37,28 +37,29 @@ def _trace(tmp_path: Path, screenshot: bool = True) -> Trace:
 
 
 def test_im_verifier_needs_manual_when_only_screenshot_passes(tmp_path: Path) -> None:
-    verdict = ImVerifierChain().verify(_task(), _trace(tmp_path), "Hello from CUA-Lark run_001", "run_001")
+    config = {"api_oracle_enabled": False, "ocr_enabled": False, "vlm_enabled": False}
+    verdict = ImVerifierChain(config=config).verify(_task(), _trace(tmp_path), "Hello from CUA-Lark run_001", "run_001")
 
     assert verdict.status == "needs_manual_verification"
-    assert verdict.evidence["evidence_schema_version"] == "im_verification.v1"
+    assert verdict.evidence["evidence_schema_version"] == "im_verification.v2"
     assert verdict.evidence["evidences"][0]["reason"] == "verify_screenshot_pass"
     assert any("确认群名" in item for item in verdict.evidence["manual_checklist"])
 
 
 def test_im_verifier_fails_when_screenshot_missing(tmp_path: Path) -> None:
-    verdict = ImVerifierChain().verify(_task(), _trace(tmp_path, screenshot=False), "Hello from CUA-Lark run_001", "run_001")
+    config = {"api_oracle_enabled": False, "ocr_enabled": False, "vlm_enabled": False}
+    verdict = ImVerifierChain(config=config).verify(_task(), _trace(tmp_path, screenshot=False), "Hello from CUA-Lark run_001", "run_001")
 
     assert verdict.status == "fail"
     assert verdict.evidence["evidences"][0]["reason"] == "verify_screenshot_missing"
 
 
-def test_im_verifier_api_ocr_vlm_skip_by_default(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.delenv("FEISHU_TENANT_ACCESS_TOKEN", raising=False)
-
-    verdict = ImVerifierChain().verify(_task(), _trace(tmp_path), "Hello from CUA-Lark run_001", "run_001")
+def test_im_verifier_api_ocr_vlm_skip_when_disabled(tmp_path: Path) -> None:
+    config = {"api_oracle_enabled": False, "ocr_enabled": False, "vlm_enabled": False}
+    verdict = ImVerifierChain(config=config).verify(_task(), _trace(tmp_path), "Hello from CUA-Lark run_001", "run_001")
     reasons = {evidence["reason"] for evidence in verdict.evidence["evidences"]}
 
-    assert "verify_api_skipped_no_token" in reasons
+    assert "verify_api_skipped_disabled" in reasons
     assert "verify_ocr_skipped_disabled" in reasons
     assert "verify_vlm_skipped_disabled" in reasons
 
@@ -99,3 +100,52 @@ def test_im_verifier_dry_run_stays_uncertain(tmp_path: Path) -> None:
 
     assert verdict.status == "uncertain"
     assert verdict.reason == "verify_dry_run_not_upgraded"
+
+
+def test_im_verifier_uses_im_api_for_api_oracle(tmp_path: Path, monkeypatch) -> None:
+    class FakeImApi:
+        def latest_message_contains(self, chat_name: str, text: str) -> dict:
+            return {
+                "status": "pass",
+                "reason": "latest_message_contains_text",
+                "chat_name": chat_name,
+                "matched_count": 1,
+                "recent_texts": [text],
+            }
+
+    import cua_lark.feishu.im_api as im_api_module
+
+    monkeypatch.setattr(im_api_module, "ImApi", lambda: FakeImApi())
+
+    verdict = ImVerifierChain(config={"api_oracle_enabled": True}).verify(
+        _task(),
+        _trace(tmp_path),
+        "Hello from CUA-Lark run_001",
+        "run_001",
+    )
+
+    assert verdict.status == "pass"
+    api_evidence = next(evidence for evidence in verdict.evidence["evidences"] if evidence["source"] == "api_oracle")
+    assert api_evidence["status"] == "pass"
+    assert api_evidence["reason"] == "verify_api_latest_message_contains_text"
+
+
+def test_im_verifier_maps_missing_api_credentials_to_skip(tmp_path: Path, monkeypatch) -> None:
+    class FakeImApi:
+        def latest_message_contains(self, chat_name: str, text: str) -> dict:
+            return {"status": "disabled", "reason": "missing_tenant_access_token", "chat_name": chat_name}
+
+    import cua_lark.feishu.im_api as im_api_module
+
+    monkeypatch.setattr(im_api_module, "ImApi", lambda: FakeImApi())
+
+    verdict = ImVerifierChain(config={"api_oracle_enabled": True}).verify(
+        _task(),
+        _trace(tmp_path),
+        "Hello from CUA-Lark run_001",
+        "run_001",
+    )
+
+    api_evidence = next(evidence for evidence in verdict.evidence["evidences"] if evidence["source"] == "api_oracle")
+    assert api_evidence["status"] == "skipped"
+    assert api_evidence["reason"] == "verify_api_skipped_missing_tenant_access_token"

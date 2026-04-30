@@ -7,10 +7,13 @@ from typing import Any
 
 import yaml
 
-from cua_lark.actions import DryRunDesktopBackend, MockActionExecutor, PyAutoGuiBackend
+from cua_lark.actions import BackendResult, DryRunDesktopBackend, MockActionExecutor, PyAutoGuiBackend
 from cua_lark.agent import MockPlanner, SafetyGuard
-from cua_lark.grounding.coordinate import compute_scale, ensure_point_in_bounds, scale_point
+from cua_lark.grounding.hybrid_grounder import HybridGrounder
 from cua_lark.perception import MockPerceptor
+from cua_lark.perception.accessibility import AccessibilityExtractor
+from cua_lark.perception.ocr import OcrClient
+from cua_lark.perception.vlm import VlmClient
 from cua_lark.task.loader import load_task
 from cua_lark.task.parser import render_task
 from cua_lark.task.schema import Action, Observation, StepGoal, TaskSpec, Trace, Verdict
@@ -33,6 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--dry-run", action="store_true")
     run.add_argument("--assume-frontmost-window", action="store_true")
     run.add_argument("--strict-verification", action="store_true")
+    run.add_argument("--grounding", default="hybrid", choices=["hybrid"], help="Use VLM + OCR + Accessibility hybrid grounding")
     return parser
 
 
@@ -109,6 +113,7 @@ def run_real_ui_task(args: argparse.Namespace) -> int:
             "allow_send": args.allow_send,
             "dry_run": args.dry_run,
             "assume_frontmost_window": args.assume_frontmost_window,
+            "grounding": args.grounding,
         }
     )
 
@@ -131,8 +136,8 @@ def run_real_ui_task(args: argparse.Namespace) -> int:
     context: dict[str, Any] = {
         "desktop_config": desktop_config,
         "execution_mode": execution_mode,
-        "coordinate_info": {},
-        "planned_points": {},
+        "grounding": args.grounding,
+        "last_visual_grounding": {},
     }
 
     status = _real_ui_prepare_and_act(args, task, trace, recorder, backend, context)
@@ -181,65 +186,23 @@ def _real_ui_prepare_and_act(
     if not focus.ok:
         return "blocked"
 
-    step_index += 1
-    screenshot = backend.screenshot(Path(trace.trace_dir) / "before_coordinate_plan.png")
-    screenshot_status = "pass" if screenshot.ok else "blocked"
-    _record_real_step(
-        recorder,
-        trace,
-        step_index,
-        "Capture screenshot before coordinate planning",
-        Action(type="screenshot", target="screen", mock=args.dry_run, metadata=screenshot.metadata or {}),
-        Verdict(status=screenshot_status, reason=screenshot.reason, evidence=screenshot.metadata or {}),
-    )
-    if not screenshot.ok:
-        return "blocked"
-
-    step_index += 1
-    coordinate_result = _plan_coordinates(desktop_config, backend, screenshot.metadata or {})
-    context["coordinate_info"] = coordinate_result["coordinate_info"]
-    context["planned_points"] = coordinate_result["planned_points"]
-    coordinate_status = "pass" if coordinate_result["ok"] else "blocked"
-    _record_real_step(
-        recorder,
-        trace,
-        step_index,
-        "Plan fixed IM coordinates with scaling",
-        Action(type="coordinate_plan", target="im_anchors", mock=args.dry_run, metadata=coordinate_result),
-        Verdict(status=coordinate_status, reason=coordinate_result["reason"], evidence=coordinate_result),
-    )
-    if not coordinate_result["ok"]:
-        return "blocked"
-
-    actions: list[tuple[str, str, Any]] = [
-        ("click", "message_module", None),
-        ("click", "search_box", None),
-        ("paste_text", "search_box", str(task.slots.get("chat_name", ""))),
-        ("press", "enter", "enter"),
-        ("click", "message_input", None),
-        ("paste_text", "message_input", str(task.slots.get("message", ""))),
+    grounder = HybridGrounder()
+    goals = [
+        StepGoal(index=step_index + 1, description="Open message module", target="message_module", expected="message page visible"),
+        StepGoal(index=step_index + 2, description="Open target chat", target=str(task.slots.get("chat_name", "")), expected="chat opened"),
+        StepGoal(index=step_index + 3, description="Paste message into input", target="message_input", expected="message text visible"),
     ]
-    for action_type, target, payload in actions:
-        step_index += 1
-        result = _execute_pre_send_action(
+
+    for goal in goals:
+        observation = _observe_for_visual_goal(
             backend,
-            context["planned_points"],
-            context["coordinate_info"],
-            action_type,
-            target,
-            payload,
-            args.dry_run,
-        )
-        status = "pass" if result.ok else "blocked"
-        _record_real_step(
-            recorder,
             trace,
-            step_index,
-            f"Pre-send action: {action_type} {target}",
-            Action(type=action_type, target=target, text=payload if action_type == "paste_text" else None, mock=args.dry_run, metadata=result.metadata or {}),
-            Verdict(status=status, reason=result.reason, evidence=result.metadata or {}),
+            goal,
+            desktop_config,
         )
-        if not result.ok:
+        action, verdict = _execute_visual_goal(args, task, backend, context, grounder, goal, observation)
+        recorder.record_step(trace, observation, action, verdict, metadata={"goal": goal.model_dump(mode="json")})
+        if verdict.status != "pass":
             return "blocked"
     return "pass"
 
@@ -340,29 +303,309 @@ def _real_ui_verify_after_send(
     return verdict.status
 
 
-def _execute_pre_send_action(
+def _observe_for_visual_goal(
     backend: Any,
-    planned_points: dict[str, tuple[int, int]],
-    coordinate_info: dict[str, Any],
+    trace: Trace,
+    goal: StepGoal,
+    desktop_config: dict[str, Any],
+) -> Observation:
+    screenshot = backend.screenshot(Path(trace.trace_dir) / f"step_{goal.index:03d}_observe.png")
+    screenshot_path = (screenshot.metadata or {}).get("path") if screenshot.ok else None
+    ocr_texts: list[dict[str, Any]] = []
+    accessibility_candidates: list[dict[str, Any]] = []
+
+    if screenshot_path:
+        ocr_texts = OcrClient().extract(str(screenshot_path))
+        accessibility_candidates = _extract_accessibility_candidates(desktop_config)
+
+    summary = _summarize_visual_goal(
+        goal,
+        screenshot_path,
+        ocr_texts,
+        allow_vlm=not bool((screenshot.metadata or {}).get("planned_only")),
+    )
+    return Observation(
+        step_index=goal.index,
+        screen_summary=summary,
+        screenshot_path=str(screenshot_path) if screenshot_path else None,
+        ocr_texts=ocr_texts,
+        accessibility_candidates=accessibility_candidates,
+        metadata={
+            "real_ui": True,
+            "grounding": "hybrid",
+            "ocr_count": len(ocr_texts),
+            "accessibility_count": len(accessibility_candidates),
+            **(screenshot.metadata or {}),
+        },
+    )
+
+
+def _extract_accessibility_candidates(desktop_config: dict[str, Any]) -> list[dict[str, Any]]:
+    title_candidates = list(desktop_config.get("window_title_candidates", ["Feishu", "飞书"]))
+    max_depth = int(desktop_config.get("accessibility_max_depth", 4))
+    extractor = AccessibilityExtractor()
+    for title in title_candidates:
+        candidates = extractor.extract_elements(window_title=title, max_depth=max_depth, include_invisible=False)
+        if candidates:
+            return candidates
+    return []
+
+
+def _summarize_visual_goal(
+    goal: StepGoal,
+    screenshot_path: str | None,
+    ocr_texts: list[dict[str, Any]],
+    allow_vlm: bool = True,
+) -> str:
+    if screenshot_path and allow_vlm:
+        prompt = (
+            "Summarize the current Feishu/Lark UI for a desktop automation step.\n"
+            f"Step: {goal.description}\n"
+            f"Target: {goal.target}\n"
+            "Mention whether the target appears and any active page context."
+        )
+        summary = VlmClient().summarize(screenshot_path, prompt)
+        if summary and not summary.startswith("VLM disabled") and not summary.startswith("VLM error"):
+            return summary
+    visible_text = ", ".join(str(item.get("text", "")) for item in ocr_texts if item.get("text"))
+    if visible_text:
+        return f"OCR-visible UI text: {visible_text}"
+    return "Hybrid observation captured no OCR text."
+
+
+def _execute_visual_goal(
+    args: argparse.Namespace,
+    task: TaskSpec,
+    backend: Any,
+    context: dict[str, Any],
+    grounder: HybridGrounder,
+    goal: StepGoal,
+    observation: Observation,
+) -> tuple[Action, Verdict]:
+    chat_name = str(task.slots.get("chat_name", ""))
+    target = _normalize_target_name(goal.target, chat_name)
+    normalized_goal = goal.model_copy(update={"target": target})
+
+    if target == "message_module":
+        return _execute_visual_message_module(args, backend, context, grounder, normalized_goal, observation)
+    if target == chat_name:
+        return _execute_visual_open_chat(args, backend, context, grounder, normalized_goal, observation, chat_name)
+    if target == "message_input":
+        return _execute_visual_message_input(args, task, backend, context, grounder, normalized_goal, observation)
+
+    return (
+        Action(type="unknown_visual_goal", target=target, mock=args.dry_run),
+        Verdict(status="blocked", reason="unsupported_visual_goal", evidence={"target": target}),
+    )
+
+
+def _execute_visual_message_module(
+    args: argparse.Namespace,
+    backend: Any,
+    context: dict[str, Any],
+    grounder: HybridGrounder,
+    goal: StepGoal,
+    observation: Observation,
+) -> tuple[Action, Verdict]:
+    if _looks_like_message_page(observation):
+        action = Action(
+            type="observe",
+            target="message_module",
+            mock=args.dry_run,
+            metadata={"skip_click": True, "grounding": "hybrid"},
+        )
+        verdict = Verdict(status="pass", reason="already_on_message_page", evidence={"skip_click": True})
+        return action, verdict
+
+    point = grounder.locate_target(
+        "left sidebar message button",
+        observation.screenshot_path,
+        observation.ocr_texts,
+        accessibility_candidates=observation.accessibility_candidates,
+    )
+    metadata = _grounding_metadata(grounder)
+    context["last_visual_grounding"] = metadata
+    if point is None:
+        action = Action(type="click", target="message_module", mock=args.dry_run, metadata=metadata)
+        verdict = Verdict(
+            status="blocked",
+            reason="message_module_button_not_found_by_vlm",
+            evidence={**metadata, "no_fallback": True},
+        )
+        return action, verdict
+
+    screen_point = _screenshot_point_to_screen(point, observation.metadata)
+    result = backend.click(screen_point[0], screen_point[1], "message_module")
+    return _action_verdict_from_backend(
+        action_type="click",
+        target="message_module",
+        coordinates=screen_point,
+        result=result,
+        dry_run=args.dry_run,
+        metadata=metadata,
+    )
+
+
+def _execute_visual_open_chat(
+    args: argparse.Namespace,
+    backend: Any,
+    context: dict[str, Any],
+    grounder: HybridGrounder,
+    goal: StepGoal,
+    observation: Observation,
+    chat_name: str,
+) -> tuple[Action, Verdict]:
+    target_description = f"left conversation list item named {chat_name}"
+    point = grounder.locate_target(
+        target_description,
+        observation.screenshot_path,
+        observation.ocr_texts,
+        accessibility_candidates=observation.accessibility_candidates,
+    )
+    metadata = _grounding_metadata(grounder)
+    context["last_visual_grounding"] = metadata
+    if point is None:
+        action = Action(type="click", target=chat_name, mock=args.dry_run, metadata=metadata)
+        verdict = Verdict(status="blocked", reason="visual_chat_list_item_not_found", evidence={**metadata, "no_fallback": True})
+        return action, verdict
+
+    screen_point = _screenshot_point_to_screen(point, observation.metadata)
+    result = backend.click(screen_point[0], screen_point[1], chat_name)
+    return _action_verdict_from_backend(
+        action_type="click",
+        target=chat_name,
+        coordinates=screen_point,
+        result=result,
+        dry_run=args.dry_run,
+        metadata=metadata,
+    )
+
+
+def _execute_visual_message_input(
+    args: argparse.Namespace,
+    task: TaskSpec,
+    backend: Any,
+    context: dict[str, Any],
+    grounder: HybridGrounder,
+    goal: StepGoal,
+    observation: Observation,
+) -> tuple[Action, Verdict]:
+    point = grounder.locate_target(
+        "message input box at bottom of chat",
+        observation.screenshot_path,
+        observation.ocr_texts,
+        accessibility_candidates=observation.accessibility_candidates,
+    )
+    metadata = _grounding_metadata(grounder)
+    context["last_visual_grounding"] = metadata
+
+    if point is None:
+        fallback_name = _fallback_anchor_for_target("message_input", context.get("planned_points", {}))
+        if fallback_name:
+            point = context["planned_points"][fallback_name]
+            metadata = {**metadata, "coordinate_source": "explicit_test_geometry_fallback", "fallback_anchor": fallback_name}
+        else:
+            action = Action(type="paste_text", target="message_input", mock=args.dry_run, metadata=metadata)
+            verdict = Verdict(status="blocked", reason="message_input_not_found_by_hybrid_grounding", evidence={**metadata, "no_fixed_coordinate_fallback": True})
+            return action, verdict
+
+    screen_point = _screenshot_point_to_screen(point, observation.metadata)
+    click = backend.click(screen_point[0], screen_point[1], "message_input")
+    if not click.ok:
+        return _action_verdict_from_backend(
+            action_type="paste_text",
+            target="message_input",
+            coordinates=screen_point,
+            result=click,
+            dry_run=args.dry_run,
+            metadata=metadata,
+        )
+
+    text = str(task.slots.get("message", ""))
+    paste = backend.paste_text(text)
+    combined_metadata = {
+        **metadata,
+        **(click.metadata or {}),
+        "paste": paste.metadata or {},
+    }
+    action = Action(
+        type="paste_text",
+        target="message_input",
+        text=text,
+        coordinates=screen_point,
+        mock=args.dry_run,
+        metadata=combined_metadata,
+    )
+    verdict = Verdict(
+        status="pass" if paste.ok else "blocked",
+        reason=paste.reason,
+        evidence=combined_metadata,
+    )
+    return action, verdict
+
+
+def _action_verdict_from_backend(
     action_type: str,
     target: str,
-    payload: Any,
+    coordinates: tuple[int, int],
+    result: BackendResult,
     dry_run: bool,
-):
-    if action_type == "click":
-        x, y = planned_points[target]
-        result = backend.click(x, y, target)
-        result.metadata = {
-            **(result.metadata or {}),
-            **coordinate_info,
-            "coordinate_source": coordinate_info.get("coordinate_source", "config_fixed_anchor"),
-        }
-        return result
-    if action_type == "paste_text":
-        return backend.paste_text(str(payload))
-    if action_type == "press":
-        return backend.press(str(payload))
-    return backend.click(0, 0, target)
+    metadata: dict[str, Any],
+) -> tuple[Action, Verdict]:
+    combined_metadata = {**metadata, **(result.metadata or {})}
+    action = Action(
+        type=action_type,
+        target=target,
+        coordinates=coordinates,
+        mock=dry_run,
+        metadata=combined_metadata,
+    )
+    verdict = Verdict(
+        status="pass" if result.ok else "blocked",
+        reason=result.reason,
+        evidence=combined_metadata,
+    )
+    return action, verdict
+
+
+def _grounding_metadata(grounder: HybridGrounder) -> dict[str, Any]:
+    metadata = dict(grounder.last_metadata or {})
+    metadata.setdefault("grounding", "hybrid")
+    return metadata
+
+
+def _looks_like_message_page(observation: Observation) -> bool:
+    summary = observation.screen_summary.lower()
+    if "conversation list" in summary or "recent chats" in summary or "message page" in summary:
+        return True
+    visible = " ".join(str(item.get("text", "")) for item in observation.ocr_texts)
+    return any(marker in visible for marker in ["会话", "CUA-Lark-Test"])
+
+
+def _normalize_target_name(target: str, chat_name: str) -> str:
+    lowered = target.lower()
+    if lowered in {"feishu_window"} or "飞书" in target and "窗口" in target:
+        return "feishu_window"
+    if lowered in {"message_module"} or "消息入口" in target or "消息按钮" in target or "message button" in lowered:
+        return "message_module"
+    if lowered in {"message_input"} or "输入框" in target or "message input" in lowered:
+        return "message_input"
+    if lowered in {"send_button_or_enter"} or "发送按钮" in target or "enter" in lowered or "send button" in lowered:
+        return "send_button_or_enter"
+    if target == chat_name or lowered in {"chat_name", "chat_list_item"} or chat_name.lower() in lowered:
+        return chat_name
+    return target
+
+
+def _screenshot_point_to_screen(point: tuple[int, int], metadata: dict[str, Any]) -> tuple[int, int]:
+    origin = metadata.get("origin") or metadata.get("screenshot_origin") or [0, 0]
+    return int(point[0] + int(origin[0])), int(point[1] + int(origin[1]))
+
+
+def _fallback_anchor_for_target(target: str, planned_points: dict[str, tuple[int, int]]) -> str | None:
+    if target == "message_input" and "message_input" in planned_points:
+        return "message_input"
+    return None
 
 
 def _record_real_step(
@@ -390,58 +633,6 @@ def _exit_code_for_status(status: str, dry_run: bool = False, strict: bool = Fal
     if dry_run and status in {"uncertain", "needs_manual_verification"}:
         return 0
     return 1
-
-
-def _plan_coordinates(desktop_config: dict[str, Any], backend: Any, screenshot_metadata: dict[str, Any]) -> dict[str, Any]:
-    base = desktop_config.get("base_resolution") or desktop_config.get("resolution") or {"width": 1440, "height": 900}
-    base_resolution = (float(base["width"]), float(base["height"]))
-    screen_size = backend.screen_size()
-    screenshot_resolution = (
-        float(screenshot_metadata.get("screenshot_width") or screen_size[0]),
-        float(screenshot_metadata.get("screenshot_height") or screen_size[1]),
-    )
-    scale_x, scale_y = compute_scale(base_resolution, screen_size)
-    anchors = desktop_config.get("im_anchors", {})
-    planned_points: dict[str, tuple[int, int]] = {}
-    try:
-        for name, spec in anchors.items():
-            point = tuple(spec["point"])
-            scaled = scale_point((float(point[0]), float(point[1])), base_resolution, screen_size)
-            planned_points[name] = ensure_point_in_bounds(scaled, screen_size)
-    except Exception as exc:
-        return {
-            "ok": False,
-            "reason": str(exc),
-            "coordinate_source": "config_fixed_anchor",
-            "base_resolution": base_resolution,
-            "actual_resolution": screen_size,
-            "pyautogui_size": screen_size,
-            "screenshot_resolution": screenshot_resolution,
-            "scale_x": scale_x,
-            "scale_y": scale_y,
-            "planned_points": planned_points,
-        }
-    return {
-        "ok": True,
-        "reason": "coordinates_planned",
-        "coordinate_info": {
-            "coordinate_source": "config_fixed_anchor",
-            "base_resolution": base_resolution,
-            "actual_resolution": screen_size,
-            "pyautogui_size": screen_size,
-            "screenshot_resolution": screenshot_resolution,
-            "scale_x": scale_x,
-            "scale_y": scale_y,
-        },
-        "planned_points": planned_points,
-        "coordinate_source": "config_fixed_anchor",
-        "base_resolution": base_resolution,
-        "actual_resolution": screen_size,
-        "pyautogui_size": screen_size,
-        "screenshot_resolution": screenshot_resolution,
-        "scale_x": scale_x,
-        "scale_y": scale_y,
-    }
 
 
 def load_desktop_config(path: str | Path) -> dict[str, Any]:

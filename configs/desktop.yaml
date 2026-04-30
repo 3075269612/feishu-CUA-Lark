@@ -10,18 +10,25 @@ resolution:
   width: 1440
   height: 900
 mock_mode_default: true
+# Verification settings
+ocr_enabled: true
+vlm_enabled: true
+api_oracle_enabled: true
 im_anchors:
+  # LEGACY: The following anchors are for old fixed-coordinate flow (Phase 2A)
+  # Visual grounding mode (Phase 2B) MUST NOT fallback to these - see _fallback_anchor_for_target()
   message_module:
-    description: "Left sidebar message entry"
+    description: "Left sidebar message entry (LEGACY - unsafe for visual fallback)"
     point: [52, 88]
   search_box:
-    description: "Top search input"
+    description: "Top search input (LEGACY - only for global search flow)"
     point: [300, 70]
   first_search_result:
-    description: "First search result for target chat"
+    description: "First search result (LEGACY - visual mode uses conversation list)"
     point: [300, 165]
+  # SAFE: These have predictable geometry and can be used as fallback
   message_input:
-    description: "Bottom message input"
+    description: "Bottom message input box (safe geometry fallback)"
     point: [760, 820]
   send_button:
     description: "Send message via Enter key"

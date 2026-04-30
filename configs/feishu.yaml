@@ -6,5 +6,5 @@ verification:
   evidence_schema_version: im_verification.v1
   timeout_sec: 10
   api_oracle_enabled: true
-  ocr_enabled: false
-  vlm_enabled: false
+  ocr_enabled: true
+  vlm_enabled: true

@@ -114,6 +114,21 @@ class PyAutoGuiBackend:
                 reason="assume_frontmost_window",
                 metadata={"backend": self.backend_name, "assume_frontmost_window": True},
             )
+
+        # Try using the robust feishu_launcher first
+        try:
+            from cua_lark.actions.feishu_launcher import ensure_feishu_frontmost
+            result = ensure_feishu_frontmost(window_title_candidates=title_candidates)
+            if result.ok:
+                result.metadata = {**(result.metadata or {}), "backend": self.backend_name, "launcher": "feishu_launcher"}
+                return result
+        except ImportError:
+            pass  # Fall back to pyautogui method
+        except Exception as exc:
+            # If launcher fails, fall back to pyautogui
+            pass
+
+        # Fallback: original pyautogui method
         try:
             pyautogui = self._load_pyautogui()
         except RuntimeError as exc:

@@ -86,6 +86,18 @@ def test_dry_run_does_not_upgrade_to_pass(tmp_path) -> None:
 def test_allow_send_creates_verification_step_with_dry_backend(tmp_path, monkeypatch) -> None:
     from cua_lark import main as main_module
 
+    class FakeGrounder:
+        def __init__(self) -> None:
+            self.last_metadata = {}
+
+        def locate_target(self, target, screenshot_path, ocr_candidates, accessibility_candidates=None):
+            self.last_metadata = {
+                "target": target,
+                "coordinate_source": "test_hybrid_grounding",
+                "screenshot_point": [100, 100],
+            }
+            return (100, 100)
+
     class SendCapableDryBackend(main_module.DryRunDesktopBackend):
         def screenshot(self, output_path):
             result = super().screenshot(output_path)
@@ -97,7 +109,18 @@ def test_allow_send_creates_verification_step_with_dry_backend(tmp_path, monkeyp
             result.metadata["planned_only"] = False
             return result
 
+    class FakeVlmClient:
+        def summarize(self, screenshot_path, prompt=None):
+            return "test summary"
+
     monkeypatch.setattr(main_module, "PyAutoGuiBackend", SendCapableDryBackend)
+    monkeypatch.setattr(main_module, "HybridGrounder", FakeGrounder)
+    monkeypatch.setattr(main_module, "VlmClient", FakeVlmClient)
+    monkeypatch.setattr(
+        main_module,
+        "load_feishu_verification_config",
+        lambda args: {"api_oracle_enabled": False, "ocr_enabled": False, "vlm_enabled": False},
+    )
     code = main(
         [
             "run",
@@ -121,6 +144,18 @@ def test_allow_send_creates_verification_step_with_dry_backend(tmp_path, monkeyp
 def test_strict_verification_returns_nonzero_for_manual_verification(tmp_path, monkeypatch) -> None:
     from cua_lark import main as main_module
 
+    class FakeGrounder:
+        def __init__(self) -> None:
+            self.last_metadata = {}
+
+        def locate_target(self, target, screenshot_path, ocr_candidates, accessibility_candidates=None):
+            self.last_metadata = {
+                "target": target,
+                "coordinate_source": "test_hybrid_grounding",
+                "screenshot_point": [100, 100],
+            }
+            return (100, 100)
+
     class SendCapableDryBackend(main_module.DryRunDesktopBackend):
         def screenshot(self, output_path):
             result = super().screenshot(output_path)
@@ -132,7 +167,18 @@ def test_strict_verification_returns_nonzero_for_manual_verification(tmp_path, m
             result.metadata["planned_only"] = False
             return result
 
+    class FakeVlmClient:
+        def summarize(self, screenshot_path, prompt=None):
+            return "test summary"
+
     monkeypatch.setattr(main_module, "PyAutoGuiBackend", SendCapableDryBackend)
+    monkeypatch.setattr(main_module, "HybridGrounder", FakeGrounder)
+    monkeypatch.setattr(main_module, "VlmClient", FakeVlmClient)
+    monkeypatch.setattr(
+        main_module,
+        "load_feishu_verification_config",
+        lambda args: {"api_oracle_enabled": False, "ocr_enabled": False, "vlm_enabled": False},
+    )
     code = main(
         [
             "run",

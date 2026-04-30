@@ -30,7 +30,16 @@ class TraceRecorder:
         action: Action,
         verdict: Verdict,
         metadata: dict[str, Any] | None = None,
+        before_screenshot: str | None = None,
+        after_screenshot: str | None = None,
     ) -> TraceEvent:
+        step_metadata = metadata or {}
+        if before_screenshot or after_screenshot:
+            step_metadata = {
+                **step_metadata,
+                "before_screenshot": before_screenshot,
+                "after_screenshot": after_screenshot,
+            }
         event = self._append_event(
             trace,
             "step",
@@ -38,10 +47,14 @@ class TraceRecorder:
             observation=observation,
             action=action,
             verdict=verdict,
-            metadata=metadata or {},
+            metadata=step_metadata,
         )
         step_path = Path(trace.trace_dir) / f"step_{observation.step_index:03d}.json"
         step_path.write_text(json.dumps(event.model_dump(mode="json"), ensure_ascii=False, indent=2), encoding="utf-8")
+        action_path = Path(trace.trace_dir) / f"step_{observation.step_index:03d}_action.json"
+        action_path.write_text(json.dumps(action.model_dump(mode="json"), ensure_ascii=False, indent=2), encoding="utf-8")
+        verdict_path = Path(trace.trace_dir) / f"step_{observation.step_index:03d}_verdict.json"
+        verdict_path.write_text(json.dumps(verdict.model_dump(mode="json"), ensure_ascii=False, indent=2), encoding="utf-8")
         return event
 
     def finalize(self, trace: Trace, status: str) -> Trace:

@@ -1,0 +1,16 @@
+id: im_mixed_content_001
+product: im
+instruction: "在 CUA-Lark-Test 群发送中英文混合消息"
+slots:
+  chat_name: "CUA-Lark-Test"
+  message: "CUA-Lark mixed content 测试 {{run_id}}"
+success_criteria:
+  - type: visual_text_exists
+    text: "CUA-Lark mixed content"
+  - type: im_message_exists_api_optional
+    chat_name: "CUA-Lark-Test"
+    text_contains: "CUA-Lark mixed content"
+limits:
+  max_steps: 30
+  timeout_sec: 120
+risk_level: low

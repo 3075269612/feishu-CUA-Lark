@@ -1,5 +1,12 @@
-provider: mock
-vlm_model: mock-vlm
-ocr_engine: mock-ocr
+provider: dashscope  # mock | dashscope
+vlm_model: qwen-vl-max  # qwen-vl-max | qwen-vl-plus | mock-vlm
+ocr_engine: rapidocr  # rapidocr | mock-ocr
 temperature: 0
 timeout_sec: 30
+
+dashscope:
+  api_key_env: DASHSCOPE_API_KEY
+  max_tokens: 2048
+
+rapidocr:
+  use_gpu: false

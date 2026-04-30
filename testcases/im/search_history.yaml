@@ -1,0 +1,13 @@
+id: im_search_history_001
+product: im
+instruction: "在 CUA-Lark-Test 群搜索聊天记录"
+slots:
+  chat_name: "CUA-Lark-Test"
+  history_query: "CUA-Lark"
+success_criteria:
+  - type: visual_text_exists
+    text: "CUA-Lark"
+limits:
+  max_steps: 25
+  timeout_sec: 90
+risk_level: low

@@ -7,7 +7,7 @@ name = "cua-lark"
 version = "0.1.0"
 description = "Visual-first CUA testing scaffold for Feishu/Lark desktop."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = [
   "pydantic",
   "PyYAML",
@@ -16,6 +16,10 @@ dependencies = [
   "pyperclip",
   "mss",
   "Pillow",
+  "dashscope>=1.20",
+  "rapidocr-onnxruntime>=1.4",
+  "httpx>=0.27",
+  "pywin32>=306; sys_platform == 'win32'",
 ]
 
 [tool.pytest.ini_options]
