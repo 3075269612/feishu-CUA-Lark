@@ -19,7 +19,7 @@ The real UI send flow must not use fixed-coordinate anchors.
 Expected result:
 
 ```text
-78 passed
+80 passed
 ```
 
 ## Real UI Send Test

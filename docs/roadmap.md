@@ -34,6 +34,20 @@
 
 组合 VLM bbox、OCR 文本框和 Accessibility 候选。视觉定位优先，结构候选只用于坐标吸附和稳定性提升。
 
+状态：已基本实现，当前 `feat/phase3-hybrid-grounding` 分支用于收口验证。
+
+已实现：
+
+- 真实 UI 观测链路保存截图并提取 OCR 文本与 Accessibility Tree 候选。
+- `HybridGrounder` 先使用 VLM bbox，再用 Accessibility / OCR 候选做 IoU 与语义匹配吸附。
+- 定位 metadata 记录 `coordinate_source`、`raw_vlm_bbox`、`calibrated_vlm_bbox`、`final_bbox` 和 `screenshot_point`。
+- 消息入口和会话列表定位失败时阻断，不回退到固定坐标；飞书 OpenAPI 仍只作为验证 Oracle。
+
+收口验证：
+
+- 单测覆盖 VLM、OCR、Accessibility 吸附和无固定坐标 fallback。
+- 真实 UI 发送验证命令保留在 `docs/PHASE2_REAL_PERCEPTION_TEST_COMMANDS.md`，默认不自动执行真实发送。
+
 ## Phase 4：Calendar
 
 创建、修改、删除测试日程，标题必须包含 CUA-Lark allowlist 关键词。
