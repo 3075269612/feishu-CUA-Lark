@@ -34,7 +34,7 @@
 流程步骤：
 
 1. **聚焦飞书窗口**
-   - 或由用户使用 `--assume-frontmost-window` 手动确认飞书在前台。
+   - 自动检测并调起飞书到前台（启动、还原最小化、置前）。
 2. **观察当前 UI 状态**：使用 VLM 理解当前页面。
 3. **智能导航到消息页**
    - 如果当前已在消息页（左侧会话列表可见），跳过此步骤。
@@ -71,7 +71,7 @@
 
 ## 常见异常
 
-- 找不到飞书窗口：返回 blocked；用户可手动置前后使用 `--assume-frontmost-window`。
+- 找不到飞书窗口：返回 blocked。
 - 坐标超出屏幕：返回 blocked，不执行点击。
 - confirm-target 与 chat_name 不一致：返回 blocked。
 - 消息缺少 `CUA-Lark` 或 `run_id`：返回 blocked。

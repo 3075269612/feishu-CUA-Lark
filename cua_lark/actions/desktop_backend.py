@@ -22,14 +22,13 @@ class DryRunDesktopBackend:
     def screen_size(self) -> tuple[int, int]:
         return self._screen_size
 
-    def focus_window(self, title_candidates: list[str], assume_frontmost_window: bool = False) -> BackendResult:
-        self.calls.append(("focus_window", {"title_candidates": title_candidates, "assume_frontmost_window": assume_frontmost_window}))
+    def focus_window(self, title_candidates: list[str]) -> BackendResult:
+        self.calls.append(("focus_window", {"title_candidates": title_candidates}))
         return BackendResult(
             ok=True,
             reason="dry_run_focus_planned",
             metadata={
                 "backend": self.backend_name,
-                "assume_frontmost_window": assume_frontmost_window,
                 "title_candidates": title_candidates,
                 "planned_only": True,
             },
@@ -107,14 +106,7 @@ class PyAutoGuiBackend:
         size = pyautogui.size()
         return int(size.width), int(size.height)
 
-    def focus_window(self, title_candidates: list[str], assume_frontmost_window: bool = False) -> BackendResult:
-        if assume_frontmost_window:
-            return BackendResult(
-                ok=True,
-                reason="assume_frontmost_window",
-                metadata={"backend": self.backend_name, "assume_frontmost_window": True},
-            )
-
+    def focus_window(self, title_candidates: list[str]) -> BackendResult:
         # Try using the robust feishu_launcher first
         try:
             from cua_lark.actions.feishu_launcher import ensure_feishu_frontmost
@@ -125,7 +117,7 @@ class PyAutoGuiBackend:
         except ImportError:
             pass  # Fall back to pyautogui method
         except Exception as exc:
-            # If launcher fails, fall back to pyautogui
+            # If launcher raises unexpectedly, fall back to pyautogui
             pass
 
         # Fallback: original pyautogui method

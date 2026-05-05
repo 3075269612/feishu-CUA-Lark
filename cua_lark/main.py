@@ -18,6 +18,7 @@ from cua_lark.task.loader import load_task
 from cua_lark.task.parser import render_task
 from cua_lark.task.schema import Action, Observation, StepGoal, TaskSpec, Trace, Verdict
 from cua_lark.trace import TraceRecorder
+from cua_lark.docs.creator import DocsCreateSkill, DocsCreateStage
 from cua_lark.verifier import ImVerifierChain, MockVerifier
 
 
@@ -34,7 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--confirm-target")
     run.add_argument("--allow-send", action="store_true")
     run.add_argument("--dry-run", action="store_true")
-    run.add_argument("--assume-frontmost-window", action="store_true")
+
     run.add_argument("--strict-verification", action="store_true")
     run.add_argument("--grounding", default="hybrid", choices=["hybrid"], help="Use VLM + OCR + Accessibility hybrid grounding")
     return parser
@@ -112,7 +113,7 @@ def run_real_ui_task(args: argparse.Namespace) -> int:
             "execution_mode": execution_mode,
             "allow_send": args.allow_send,
             "dry_run": args.dry_run,
-            "assume_frontmost_window": args.assume_frontmost_window,
+
             "grounding": args.grounding,
         }
     )
@@ -140,6 +141,16 @@ def run_real_ui_task(args: argparse.Namespace) -> int:
         "last_visual_grounding": {},
     }
 
+    if task.product == "docs":
+        final_status = _real_ui_docs_create_and_act(args, task, trace, recorder, backend, context)
+        recorder.finalize(trace, final_status)
+        report_path = recorder.write_report(trace)
+        print("Real UI docs create run completed.")
+        print(f"Status: {trace.status}")
+        print(f"Trace dir: {trace.trace_dir}")
+        print(f"Report: {report_path}")
+        return _exit_code_for_status(final_status, dry_run=args.dry_run, strict=args.strict_verification)
+
     status = _real_ui_prepare_and_act(args, task, trace, recorder, backend, context)
     if status != "pass":
         recorder.finalize(trace, status)
@@ -161,6 +172,97 @@ def run_real_ui_task(args: argparse.Namespace) -> int:
     return _exit_code_for_status(final_status, dry_run=args.dry_run, strict=args.strict_verification)
 
 
+def _real_ui_docs_create_and_act(
+    args: argparse.Namespace,
+    task: TaskSpec,
+    trace: Trace,
+    recorder: TraceRecorder,
+    backend: Any,
+    context: dict[str, Any],
+) -> str:
+    """Run the DocsCreateSkill state machine for creating a blank document."""
+    desktop_config = context["desktop_config"]
+    title_candidates = list(desktop_config.get("window_title_candidates", ["Feishu", "飞书"]))
+    screen_width, screen_height = _config_screen_size(desktop_config)
+    step_index = 1
+
+    focus = backend.focus_window(title_candidates)
+    focus_status = "pass" if focus.ok else "blocked"
+    _record_real_step(
+        recorder, trace, step_index,
+        "Focus Feishu window",
+        Action(type="focus_window", target="Feishu", mock=args.dry_run, metadata=focus.metadata or {}),
+        Verdict(status=focus_status, reason=focus.reason, evidence=focus.metadata or {}),
+    )
+    if not focus.ok:
+        return "blocked"
+
+    target_doc = str(task.slots.get("target_doc", ""))
+    allow_edit = bool(args.allow_send and not args.dry_run)
+
+    skill = DocsCreateSkill(target_doc=target_doc)
+    grounder = HybridGrounder()
+
+    while not skill.is_done:
+        stage = skill.stage
+        step_index += 1
+
+        screenshot = backend.screenshot(Path(trace.trace_dir) / f"step_{step_index:03d}_observe.png")
+        screenshot_path = (screenshot.metadata or {}).get("path") if screenshot.ok else None
+
+        ocr_texts: list[dict[str, Any]] = []
+        accessibility_candidates: list[dict[str, Any]] = []
+        if screenshot_path:
+            ocr_texts = OcrClient().extract(str(screenshot_path))
+            accessibility_candidates = _extract_accessibility_candidates(desktop_config)
+
+        guidance = skill.guidance_prompt()
+        stage_goals = skill.stage_step_goals()
+        primary_goal = stage_goals[0] if stage_goals else StepGoal(
+            index=step_index, description=guidance, target="docs", expected="stage complete"
+        )
+        summary = _summarize_visual_goal(
+            primary_goal, screenshot_path, ocr_texts,
+            allow_vlm=not bool((screenshot.metadata or {}).get("planned_only")),
+        )
+
+        if not allow_edit and stage != DocsCreateStage.STAGE_CLICK_CLOUD_DOCS:
+            action = Action(
+                type="docs_stage_planned",
+                target=stage.label,
+                mock=True,
+                metadata={"stage": stage.label, "planned_only": True, "guidance": guidance},
+            )
+            verdict = Verdict(
+                status="uncertain" if args.dry_run else "needs_manual_verification",
+                reason="allow_send_not_provided_docs_create_skipped" if not args.dry_run else "dry_run_docs_create_not_executed",
+                evidence={"stage": stage.label, "guidance": guidance},
+            )
+        else:
+            action, verdict = skill.execute_stage(
+                backend, grounder, screenshot_path, ocr_texts, accessibility_candidates,
+                dry_run=args.dry_run or not allow_edit,
+                screen_width=screen_width, screen_height=screen_height,
+            )
+
+        observation = Observation(
+            step_index=step_index,
+            screen_summary=summary,
+            screenshot_path=str(screenshot_path) if screenshot_path else None,
+            ocr_texts=ocr_texts,
+            accessibility_candidates=accessibility_candidates,
+            metadata={"real_ui": True, "grounding": "hybrid", "stage": stage.label, **(screenshot.metadata or {})},
+        )
+        recorder.record_step(trace, observation, action, verdict, metadata={"stage": stage.label, "guidance": guidance})
+
+        if verdict.status not in ("pass", "uncertain", "needs_manual_verification"):
+            return "blocked"
+
+        skill.advance()
+
+    return "pass"
+
+
 def _real_ui_prepare_and_act(
     args: argparse.Namespace,
     task: TaskSpec,
@@ -173,7 +275,7 @@ def _real_ui_prepare_and_act(
     title_candidates = list(desktop_config.get("window_title_candidates", ["Feishu", "飞书"]))
     step_index = 1
 
-    focus = backend.focus_window(title_candidates, assume_frontmost_window=args.assume_frontmost_window)
+    focus = backend.focus_window(title_candidates)
     focus_status = "pass" if focus.ok else "blocked"
     _record_real_step(
         recorder,

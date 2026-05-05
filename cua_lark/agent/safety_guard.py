@@ -81,7 +81,7 @@ class SafetyGuard:
         rendered_message: str,
         run_id: str,
     ) -> SafetyDecision:
-        if task.product != "im":
+        if task.product not in ("im", "docs"):
             return SafetyDecision(False, f"real_ui_product_not_allowed:{task.product}")
         if task.risk_level != "low":
             return SafetyDecision(False, f"risk_level_not_allowed:{task.risk_level}")
@@ -89,6 +89,14 @@ class SafetyGuard:
         task_decision = self.check_task(task)
         if not task_decision.allowed:
             return task_decision
+
+        if task.product == "docs":
+            target_doc = str(task.slots.get("target_doc", ""))
+            if self.real_ui_requires_confirm_target and not confirm_target:
+                return SafetyDecision(False, "confirm_target_required")
+            if confirm_target and target_doc and "CUA" not in target_doc:
+                return SafetyDecision(False, f"docs_title_missing_cua_marker:{target_doc}")
+            return SafetyDecision(True)
 
         chat_name = task.slots.get("chat_name")
         if self.real_ui_requires_confirm_target and not confirm_target:

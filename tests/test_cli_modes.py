@@ -129,7 +129,6 @@ def test_allow_send_creates_verification_step_with_dry_backend(tmp_path, monkeyp
             "--confirm-target",
             "CUA-Lark-Test",
             "--allow-send",
-            "--assume-frontmost-window",
             "--runs-dir",
             str(tmp_path),
         ]
@@ -187,7 +186,6 @@ def test_strict_verification_returns_nonzero_for_manual_verification(tmp_path, m
             "--confirm-target",
             "CUA-Lark-Test",
             "--allow-send",
-            "--assume-frontmost-window",
             "--strict-verification",
             "--runs-dir",
             str(tmp_path),

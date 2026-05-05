@@ -1,0 +1,12 @@
+id: docs_create_blank_001
+product: docs
+instruction: "在飞书中创建空白文档并设置标题"
+slots:
+  target_doc: "CUA-Dark-Test-Doc"
+success_criteria:
+  - type: visual_text_exists
+    text: "CUA-Dark-Test-Doc"
+limits:
+  max_steps: 30
+  timeout_sec: 120
+risk_level: low

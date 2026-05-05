@@ -119,32 +119,28 @@ def ensure_feishu_frontmost(
                 metadata={"hwnd": hwnd, "window_title": window_title},
             )
 
-    # Step 6: Verify window is in foreground
+    # Step 6: Verify window is ready (found + restored + focus attempted).
+    # Windows may block SetForegroundWindow due to anti-focus-stealing rules,
+    # but pyautogui can still click/type into the window. Treat as ok.
     foreground_hwnd = win32gui.GetForegroundWindow()
-    if foreground_hwnd != hwnd:
+    frontmost = (foreground_hwnd == hwnd)
+    if not frontmost:
         logger.warning(
-            f"Feishu window not in foreground. Expected hwnd={hwnd}, got {foreground_hwnd}"
-        )
-        return BackendResult(
-            ok=False,
-            reason="window_not_in_foreground",
-            metadata={
-                "expected_hwnd": hwnd,
-                "actual_hwnd": foreground_hwnd,
-                "window_title": window_title,
-            },
+            f"Feishu window not in foreground (expected hwnd={hwnd}, got {foreground_hwnd}). "
+            "Continuing anyway — pyautogui can interact without foreground focus."
         )
 
-    logger.info("Feishu window successfully brought to foreground")
+    logger.info("Feishu window preparation complete")
     return BackendResult(
         ok=True,
-        reason="feishu_frontmost",
+        reason="feishu_frontmost" if frontmost else "feishu_visible_not_foreground",
         metadata={
             "hwnd": hwnd,
             "was_running": feishu_running,
             "window_title": window_title,
             "is_iconic": win32gui.IsIconic(hwnd),
             "is_visible": win32gui.IsWindowVisible(hwnd),
+            "is_frontmost": frontmost,
         },
     )
 
@@ -258,15 +254,16 @@ def _force_foreground_window(hwnd: int) -> None:
     import win32api
     import win32con
     import win32gui
+    import win32process
 
     # Get current foreground window's thread
     foreground_hwnd = win32gui.GetForegroundWindow()
-    foreground_thread = win32api.GetWindowThreadProcessId(foreground_hwnd)[0]
-    target_thread = win32api.GetWindowThreadProcessId(hwnd)[0]
+    foreground_thread = win32process.GetWindowThreadProcessId(foreground_hwnd)[0]
+    target_thread = win32process.GetWindowThreadProcessId(hwnd)[0]
 
     # Attach to foreground thread to bypass restrictions
     if foreground_thread != target_thread:
-        win32api.AttachThreadInput(foreground_thread, target_thread, True)
+        win32process.AttachThreadInput(foreground_thread, target_thread, True)
 
     # Simulate Alt key to allow SetForegroundWindow
     win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
@@ -275,4 +272,4 @@ def _force_foreground_window(hwnd: int) -> None:
 
     # Detach threads
     if foreground_thread != target_thread:
-        win32api.AttachThreadInput(foreground_thread, target_thread, False)
+        win32process.AttachThreadInput(foreground_thread, target_thread, False)

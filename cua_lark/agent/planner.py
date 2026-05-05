@@ -22,6 +22,18 @@ class MockPlanner:
                 StepGoal(index=4, description="Fill message input", target="message_input", expected="message text visible"),
                 StepGoal(index=5, description="Send and verify message", target="send_button_or_enter", expected="latest message visible"),
             ]
+        if task.product == "docs":
+            from cua_lark.docs.creator import DocsCreateSkill
+
+            target_doc = str(task.slots.get("target_doc", ""))
+            skill = DocsCreateSkill(target_doc=target_doc)
+            goals: list[StepGoal] = []
+            while not skill.is_done:
+                goals.extend(skill.stage_step_goals())
+                skill.advance()
+            for i, goal in enumerate(goals):
+                goals[i] = goal.model_copy(update={"index": i + 1})
+            return goals
         return [
             StepGoal(index=1, description=f"Mock plan for {task.product}", target=task.product, expected="mock step passes"),
         ]
