@@ -19,6 +19,7 @@ from cua_lark.task.nl_parser import parse_natural_language
 from cua_lark.task.parser import render_task
 from cua_lark.task.schema import Action, Observation, StepGoal, TaskSpec, Trace, Verdict
 from cua_lark.trace import TraceRecorder
+from cua_lark.trace.exporter import export_trace_datasets
 from cua_lark.calendar.creator import CalendarCreateSkill, CalendarCreateStage
 from cua_lark.cross_product.kickoff import CrossProductSkill, CrossProductStage, ImSendSubStage
 from cua_lark.docs.creator import DocsCreateSkill, DocsCreateStage
@@ -48,6 +49,13 @@ def build_parser() -> argparse.ArgumentParser:
     eval_cmd.add_argument("suite_path", help="Path to eval suite YAML")
     eval_cmd.add_argument("--profile", default="mock", choices=["mock", "real-smoke-dry-run", "real-smoke"])
     eval_cmd.add_argument("--runs-dir", default="runs")
+
+    export_cmd = subparsers.add_parser("export-traces", help="Export Phase 8 trace datasets")
+    export_cmd.add_argument("runs_dir", help="Directory containing run traces")
+    export_cmd.add_argument("--out", required=True, help="Output directory for exported datasets")
+    export_cmd.add_argument("--statuses", default="pass", help="Comma-separated statuses to export")
+    export_cmd.add_argument("--include-products", default=None, help="Comma-separated products to include")
+    export_cmd.add_argument("--max-runs", type=int, default=None, help="Maximum number of runs to export")
     return parser
 
 
@@ -1026,6 +1034,26 @@ def run_eval_command(args: argparse.Namespace) -> int:
     return code
 
 
+def run_export_traces_command(args: argparse.Namespace) -> int:
+    statuses = _split_csv(args.statuses) or ("pass",)
+    include_products = _split_csv(args.include_products) if args.include_products else None
+    summary = export_trace_datasets(
+        args.runs_dir,
+        args.out,
+        statuses=statuses,
+        include_products=include_products,
+        max_runs=args.max_runs,
+    )
+    print("Trace export completed.")
+    print(f"Output dir: {summary['output_dir']}")
+    print(f"Exported runs: {summary['exported_runs']}")
+    print(f"Grounding examples: {summary['grounding_examples']}")
+    print(f"Few-shot examples: {summary['fewshot_examples']}")
+    print(f"Summary JSON: {summary['generated_files']['export_summary_json']}")
+    print(f"MCP manifest: {summary['generated_files']['mcp_manifest']}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -1033,8 +1061,16 @@ def main(argv: list[str] | None = None) -> int:
         return run_task(args)
     if args.command == "eval":
         return run_eval_command(args)
+    if args.command == "export-traces":
+        return run_export_traces_command(args)
     parser.error(f"Unknown command: {args.command}")
     return 2
+
+
+def _split_csv(value: str | None) -> tuple[str, ...]:
+    if not value:
+        return ()
+    return tuple(part.strip() for part in value.split(",") if part.strip())
 
 
 if __name__ == "__main__":

@@ -32,8 +32,10 @@ cases:
     assert code == 0
     summary_json = next((tmp_path / "runs").glob("cli_eval_suite_mock_*/summary.json"))
     summary_md = summary_json.with_name("summary.md")
+    summary_html = summary_json.with_name("summary.html")
     summary = json.loads(summary_json.read_text(encoding="utf-8"))
     assert summary_md.exists()
+    assert summary_html.exists()
     assert summary["suite_id"] == "cli_eval_suite"
     assert summary["metrics"]["total_cases"] == 2
     assert summary["metrics"]["success_cases"] == 2

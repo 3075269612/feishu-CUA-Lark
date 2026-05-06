@@ -146,3 +146,25 @@ python -m cua_lark.main run testcases/cross_product/kickoff_flow.yaml --real-ui 
 - `pass` 计入成功。
 - `needs_manual_verification`、`sent_with_screenshot_evidence` 计入 manual bucket。
 - `blocked`、`fail`、`uncertain` 计入非成功。
+
+## Phase 8：Trace 数据集、Tool Registry 与后置增强收口
+
+将 Phase 7 的 trace 和 summary 沉淀为可复用数据资产，同时为 MCP、OpenCLI 和后续 GUI-R1 / ScaleCUA 风格优化保留接口，但不在主链路中引入新的不稳定运行时依赖。
+
+状态：已实现 Phase 8 收口工具。
+
+已实现：
+
+- `python -m cua_lark.main export-traces <runs_dir> --out <output_dir>`
+- 递归解析 `trace.jsonl`、`task.yaml`、`report.md` 和 eval `summary.json`。
+- 输出 `traces.jsonl`、`grounding_eval.jsonl`、`fewshot_examples.jsonl`、`export_summary.json`、`export_summary.md`。
+- 默认只导出 `pass` trace；manual bucket 需要通过 `--statuses` 显式纳入。
+- 本地 `tool_registry` 固定登记 FeishuWorld eval、trace export、IM oracle、clipboard set 四类工具。
+- 导出 `mcp_manifest.json`，作为后续 MCP Server 包装的稳定 schema 输入。
+
+边界：
+
+- OpenCLI 只作为环境准备、状态读取、页面结构 dump 和 Electron/CDP 调试辅助。
+- MCP 当前只落到本地 tool registry 与 manifest，不启动 MCP Server。
+- GUI-R1 / ScaleCUA 当前只做轨迹数据准备、few-shot 和 grounding eval，不做 SFT/RL。
+- UI-TARS、UGround、Touchpoint、ScenGen、OSWorld 等主要作为思想参考；当前代码不把它们作为硬依赖。

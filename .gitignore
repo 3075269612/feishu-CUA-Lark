@@ -21,6 +21,7 @@ env/
 configs/secrets.local.yaml
 
 runs/
+datasets/generated/
 dist/
 build/
 *.egg-info/
