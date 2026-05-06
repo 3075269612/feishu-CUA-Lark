@@ -78,9 +78,54 @@
 
 Stage 4 强制禁止鼠标点击正文区域（y_ratio > 0.15 即拦截），确保全键盘定位。已通过真实飞书桌面端验证。
 
-## Phase 6：跨产品链路
+## Phase 6：跨产品链路 + NL→TaskSpec
+
+**状态：已完成。**
+
+### 跨产品链路（CrossProductSkill）
 
 用显式子任务状态机连接 IM、Calendar、Docs 和 IM 汇总，不允许让模型自由长链路操作。
+
+`CrossProductSkill` 元状态机：`STAGE_CALENDAR → STAGE_DOCS → STAGE_IM → STAGE_DONE`
+
+- **Calendar 阶段**：委派给 `CalendarCreateSkill` 6 阶段状态机（Ctrl+3 导航→创建日程→标题输入→保存→验证）
+- **Docs 阶段**：委派给 `DocsCreateSkill` 5 阶段状态机（云文档→新建→文档类型→新建空白→标题）
+- **IM 阶段**：内联 `ImSendSubStage` 状态机（导航消息页→打开群聊→粘贴汇总消息→发送）
+- 汇总消息格式：`"CUA-Lark Kickoff {run_id} 完成:\n- 日历日程: {event_title}\n- 文档已创建: {folder_name}"`
+- 总计约 15 步（5+5+4），每条 trace 记录 `meta_stage` 和 `sub_task` 元数据
+
+### 自然语言→TaskSpec（nl_parser）
+
+方案文档要求架构入口为"用户自然语言 / YAML 测试用例 → TaskSpec 任务解析器"，现在两条路径均已实现。
+
+`--nl` 参数使用 VLM（Qwen-VL-Max）结合 `skills/*.md` 领域知识，将自然语言自动解析为结构化 TaskSpec：
+
+- 识别产品类型（im / calendar / docs / cross_product）
+- 提取槽位（chat_name、event_title、folder_name、message 等）
+- 生成成功标准（visual_text_exists）
+- 自动注入 `{{run_id}}` 标记确保通过 SafetyGuard
+- 支持 mock 和 real-ui 两种执行模式
+
+测试用例（YAML）和自然语言输入均可用于所有执行模式。
+
+### 复现方法
+
+```bash
+# Mock 模式 — 快速验证 NL 解析
+python -m cua_lark.main run --nl "在CUA-Lark-Test群发一条消息：测试" --mock
+
+# 真实 UI + 发送 — IM
+python -m cua_lark.main run --nl "在CUA-Lark-Test群发一条消息：端到端测试" --real-ui --confirm-target CUA-Lark-Test --allow-send
+
+# 真实 UI + 发送 — Calendar
+python -m cua_lark.main run --nl "在日历中创建CUA-Lark项目启动会议" --real-ui --confirm-target CUA-Lark-Test --allow-send
+
+# Cross-Product YAML（mock 模式）
+python -m cua_lark.main run testcases/cross_product/kickoff_flow.yaml --mock
+
+# Cross-Product YAML（real-ui）
+python -m cua_lark.main run testcases/cross_product/kickoff_flow.yaml --real-ui --confirm-target CUA-Lark-Test --allow-send
+```
 
 ## Phase 7：评测集与报告
 
