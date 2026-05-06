@@ -29,7 +29,7 @@ class DocsCreateStage(IntEnum):
 # Mapping each stage to the grounding target description for the VLM.
 STAGE_TARGET_DESCRIPTIONS: dict[DocsCreateStage, str] = {
     DocsCreateStage.STAGE_CLICK_CLOUD_DOCS: "云文档",
-    DocsCreateStage.STAGE_CLICK_NEW: "云文档主页中的新建入口，文字为新建或新建文档开始协作",
+    DocsCreateStage.STAGE_CLICK_NEW: "云文档主页中的新建按钮，主标题为新建，副标题为新建文档开始协作",
     DocsCreateStage.STAGE_CLICK_DOC_TYPE: "新建菜单弹层中的文档类型选项，不是文档列表或文档入口",
     DocsCreateStage.STAGE_CLICK_NEW_BLANK: "模板页或新建文档页中的新建空白文档按钮",
     DocsCreateStage.STAGE_INPUT_TITLE: "请输入标题",
@@ -77,8 +77,9 @@ class DocsCreateSkill:
                 '如果当前已在云文档页面则跳过此步骤。'
             ),
             DocsCreateStage.STAGE_CLICK_NEW: (
-                '当前步骤：点击页面右上角的[新建]按钮。\n'
-                '在云文档页面右侧找到[新建]按钮并点击，点击后会弹出文档类型选择菜单。'
+                '当前步骤：点击云文档主页中的[新建]按钮。\n'
+                '该按钮主标题是[新建]，下面通常有小字[新建文档开始协作]。'
+                '点击这个按钮后会弹出文档类型选择菜单。'
             ),
             DocsCreateStage.STAGE_CLICK_DOC_TYPE: (
                 '当前步骤：在弹出的菜单中点击[文档]选项。\n'
@@ -264,12 +265,29 @@ class DocsCreateSkill:
         dry_run: bool,
     ) -> tuple[Action, Verdict] | None:
         if not ocr_texts:
+            if self.stage == DocsCreateStage.STAGE_CLICK_NEW:
+                return self._blocked_precondition(
+                    "new_button_not_visible",
+                    {"required_text": "新建", "helper_text": "新建文档开始协作"},
+                )
             return None
 
+        if self.stage == DocsCreateStage.STAGE_CLICK_CLOUD_DOCS:
+            already_home = _find_new_button_candidate(ocr_texts)
+            if already_home is not None:
+                return self._pass_precondition(
+                    "already_on_cloud_docs_home",
+                    {"detected_text": already_home.get("text"), "ocr_bbox": already_home.get("bbox")},
+                )
+
         if self.stage == DocsCreateStage.STAGE_CLICK_NEW:
-            candidate = _find_ocr_candidate(ocr_texts, {"新建"}, x_min=350, y_max=450)
+            candidate = _find_new_button_candidate(ocr_texts)
             if candidate is not None:
-                return self._click_candidate(backend, candidate, "新建", dry_run, "ocr_exact_stage_target")
+                return self._click_candidate(backend, candidate, "新建", dry_run, "ocr_new_button_with_helper_text")
+            return self._blocked_precondition(
+                "new_button_not_visible",
+                {"required_text": "新建", "helper_text": "新建文档开始协作"},
+            )
 
         if self.stage == DocsCreateStage.STAGE_CLICK_DOC_TYPE:
             candidate = _find_ocr_candidate(ocr_texts, {"文档"}, x_min=700, y_min=250, y_max=900)
@@ -346,6 +364,13 @@ class DocsCreateSkill:
             Verdict(status="blocked", reason=reason, evidence=metadata),
         )
 
+    def _pass_precondition(self, reason: str, evidence: dict[str, Any]) -> tuple[Action, Verdict]:
+        metadata = {"stage": self.stage.label, **evidence}
+        return (
+            Action(type="observe", target=self.grounding_target_description, mock=True, metadata=metadata),
+            Verdict(status="pass", reason=reason, evidence=metadata),
+        )
+
     def _execute_input_title(
         self,
         backend: Any,
@@ -414,6 +439,54 @@ def _find_ocr_candidate(
         if x_min is not None and x1 < x_min:
             continue
         if y_min is not None and y1 < y_min:
+            continue
+        if y_max is not None and y2 > y_max:
+            continue
+        candidates.append(item)
+    if not candidates:
+        return None
+    return sorted(candidates, key=lambda item: (float((item.get("bbox") or [0, 0, 0, 0])[1]), float((item.get("bbox") or [0, 0, 0, 0])[0])))[0]
+
+
+def _find_new_button_candidate(ocr_texts: list[dict[str, Any]]) -> dict[str, Any] | None:
+    title = _find_ocr_candidate(ocr_texts, {"新建"}, x_min=350, y_max=450)
+    helper = _find_ocr_contains_candidate(ocr_texts, "新建文档开始协作", x_min=350, y_max=500)
+    if title is None:
+        return helper
+    if helper is None:
+        return title
+    title_bbox = title.get("bbox") or []
+    helper_bbox = helper.get("bbox") or []
+    if len(title_bbox) != 4 or len(helper_bbox) != 4:
+        return title
+    x1 = min(float(title_bbox[0]), float(helper_bbox[0]))
+    y1 = min(float(title_bbox[1]), float(helper_bbox[1]))
+    x2 = max(float(title_bbox[2]), float(helper_bbox[2]))
+    y2 = max(float(title_bbox[3]), float(helper_bbox[3]))
+    return {
+        "text": f"{title.get('text')} / {helper.get('text')}",
+        "bbox": [x1, y1, x2, y2],
+        "confidence": min(float(title.get("confidence", 1.0)), float(helper.get("confidence", 1.0))),
+    }
+
+
+def _find_ocr_contains_candidate(
+    ocr_texts: list[dict[str, Any]],
+    needle: str,
+    x_min: float | None = None,
+    y_max: float | None = None,
+) -> dict[str, Any] | None:
+    candidates: list[dict[str, Any]] = []
+    normalized_needle = needle.replace(" ", "")
+    for item in ocr_texts:
+        text = str(item.get("text", "")).strip()
+        if normalized_needle not in text.replace(" ", ""):
+            continue
+        bbox = item.get("bbox")
+        if not bbox or len(bbox) != 4:
+            continue
+        x1, _y1, _x2, y2 = [float(value) for value in bbox]
+        if x_min is not None and x1 < x_min:
             continue
         if y_max is not None and y2 > y_max:
             continue

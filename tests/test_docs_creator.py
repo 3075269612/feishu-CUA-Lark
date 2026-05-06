@@ -175,8 +175,21 @@ class TestExecuteStageDryRun:
         skill = DocsCreateSkill(target_doc="CUA-Dark-Test-Doc")
         backend = self._make_fake_backend()
         grounder = self._make_fake_grounder()
+        ocr_by_stage = {
+            DocsCreateStage.STAGE_CLICK_NEW: [
+                {"text": "新建", "bbox": [1072, 289, 1133, 322], "confidence": 0.99},
+                {"text": "新建文档开始协作", "bbox": [1072, 335, 1270, 364], "confidence": 0.99},
+            ],
+            DocsCreateStage.STAGE_CLICK_DOC_TYPE: [
+                {"text": "文档", "bbox": [1108, 443, 1177, 487], "confidence": 0.99}
+            ],
+            DocsCreateStage.STAGE_CLICK_NEW_BLANK: [
+                {"text": "新建空白文档", "bbox": [1138, 709, 1288, 743], "confidence": 0.99}
+            ],
+        }
         while not skill.is_done:
-            _, verdict = skill.execute_stage(backend, grounder, None, [], [], dry_run=True)
+            ocr_texts = ocr_by_stage.get(skill.stage, [])
+            _, verdict = skill.execute_stage(backend, grounder, None, ocr_texts, [], dry_run=True)
             assert verdict.status == "pass", f"Failed at {skill.stage.label}: {verdict.reason}"
             skill.advance()
         assert skill.is_done
@@ -201,6 +214,73 @@ class TestExecuteStageDryRun:
         assert action.coordinates == (1142, 465)
         assert action.metadata["coordinate_source"] == "ocr_exact_menu_item"
         assert verdict.status == "pass"
+
+    def test_cloud_docs_stage_skips_when_home_is_already_visible(self) -> None:
+        skill = DocsCreateSkill(target_doc="CUA-Dark-Test-Doc")
+        backend = self._make_fake_backend()
+        grounder = self._make_fake_grounder(point=(999, 999))
+
+        action, verdict = skill.execute_stage(
+            backend,
+            grounder,
+            None,
+            [
+                {"text": "新建", "bbox": [1072, 289, 1133, 322], "confidence": 0.99},
+                {"text": "新建文档开始协作", "bbox": [1072, 335, 1270, 364], "confidence": 0.99},
+            ],
+            [],
+            dry_run=False,
+        )
+
+        assert action.type == "observe"
+        assert verdict.status == "pass"
+        assert verdict.reason == "already_on_cloud_docs_home"
+        assert backend.calls == []
+
+    def test_new_stage_clicks_new_button_with_helper_text(self) -> None:
+        skill = DocsCreateSkill(target_doc="CUA-Dark-Test-Doc")
+        skill.advance()
+        backend = self._make_fake_backend()
+        grounder = self._make_fake_grounder(point=(999, 999))
+
+        action, verdict = skill.execute_stage(
+            backend,
+            grounder,
+            None,
+            [
+                {"text": "新建", "bbox": [1072, 289, 1133, 322], "confidence": 0.99},
+                {"text": "新建文档开始协作", "bbox": [1072, 335, 1270, 364], "confidence": 0.99},
+            ],
+            [],
+            dry_run=False,
+        )
+
+        assert action.target == "新建"
+        assert action.coordinates == (1171, 326)
+        assert action.metadata["coordinate_source"] == "ocr_new_button_with_helper_text"
+        assert "next_stage" not in action.metadata
+        assert action.metadata["advance_stage"] is True
+        assert verdict.status == "pass"
+
+    def test_new_stage_blocks_instead_of_vlm_fallback_when_button_missing(self) -> None:
+        skill = DocsCreateSkill(target_doc="CUA-Dark-Test-Doc")
+        skill.advance()
+        backend = self._make_fake_backend()
+        grounder = self._make_fake_grounder(point=(999, 999))
+
+        action, verdict = skill.execute_stage(
+            backend,
+            grounder,
+            None,
+            [{"text": "推荐", "bbox": [407, 101, 488, 138], "confidence": 0.99}],
+            [],
+            dry_run=False,
+        )
+
+        assert action.type == "observe"
+        assert verdict.status == "blocked"
+        assert verdict.reason == "new_button_not_visible"
+        assert backend.calls == []
 
     def test_new_blank_stage_reopens_new_without_advancing_when_blank_missing(self) -> None:
         skill = DocsCreateSkill(target_doc="CUA-Dark-Test-Doc")
