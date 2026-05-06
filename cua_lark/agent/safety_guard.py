@@ -81,7 +81,7 @@ class SafetyGuard:
         rendered_message: str,
         run_id: str,
     ) -> SafetyDecision:
-        if task.product not in ("im", "docs"):
+        if task.product not in ("im", "docs", "cross_product"):
             return SafetyDecision(False, f"real_ui_product_not_allowed:{task.product}")
         if task.risk_level != "low":
             return SafetyDecision(False, f"risk_level_not_allowed:{task.risk_level}")
@@ -96,6 +96,17 @@ class SafetyGuard:
                 return SafetyDecision(False, "confirm_target_required")
             if confirm_target and target_doc and "CUA" not in target_doc:
                 return SafetyDecision(False, f"docs_title_missing_cua_marker:{target_doc}")
+            return SafetyDecision(True)
+
+        if task.product == "cross_product":
+            event_title = str(task.slots.get("event_title", ""))
+            folder_name = str(task.slots.get("folder_name", ""))
+            if self.real_ui_requires_confirm_target and not confirm_target:
+                return SafetyDecision(False, "confirm_target_required")
+            if "CUA-Lark" not in event_title:
+                return SafetyDecision(False, f"event_title_missing_cua_lark_marker:{event_title}")
+            if "CUA-Lark" not in folder_name:
+                return SafetyDecision(False, f"folder_name_missing_cua_lark_marker:{folder_name}")
             return SafetyDecision(True)
 
         chat_name = task.slots.get("chat_name")
