@@ -13,7 +13,7 @@ The real UI send flow must not use fixed-coordinate anchors.
 ## Full Automated Test Suite
 
 ```powershell
-.\.conda310\python.exe -m pytest tests
+python -m pytest tests
 ```
 
 Expected result:
@@ -27,7 +27,7 @@ Expected result:
 This command controls the local Feishu/Lark desktop client and sends a real message to `CUA-Lark-Test`.
 
 ```powershell
-.\.conda310\python.exe -m cua_lark.main run testcases/im/send_text.yaml --real-ui --confirm-target CUA-Lark-Test --allow-send --strict-verification --grounding hybrid 2>&1
+python -m cua_lark.main run testcases/im/send_text.yaml --real-ui --confirm-target CUA-Lark-Test --allow-send --strict-verification --grounding hybrid 2>&1
 ```
 
 Expected result:
@@ -55,7 +55,7 @@ config_fixed_anchor
 Latest validation on 2026-04-30:
 
 ```text
-Command: .\.conda310\python.exe -m cua_lark.main run testcases/im/send_text.yaml --real-ui --confirm-target CUA-Lark-Test --allow-send --strict-verification --grounding hybrid --runs-dir .pytest_tmp_validate 2>&1
+Command: python -m cua_lark.main run testcases/im/send_text.yaml --real-ui --confirm-target CUA-Lark-Test --allow-send --strict-verification --grounding hybrid --runs-dir .pytest_tmp_validate 2>&1
 Run ID: 20260430_191554_357619
 Status: pass
 api_oracle: pass
@@ -68,7 +68,7 @@ vlm: pass
 Use this before sending if you want to validate the control path without sending a message.
 
 ```powershell
-.\.conda310\python.exe -m cua_lark.main run testcases/im/send_text.yaml --real-ui --confirm-target CUA-Lark-Test --dry-run --grounding hybrid 2>&1
+python -m cua_lark.main run testcases/im/send_text.yaml --real-ui --confirm-target CUA-Lark-Test --dry-run --grounding hybrid 2>&1
 ```
 
 Expected result:
@@ -80,7 +80,7 @@ Status: uncertain
 ## Mock Test
 
 ```powershell
-.\.conda310\python.exe -m cua_lark.main run testcases/im/send_text.yaml --mock 2>&1
+python -m cua_lark.main run testcases/im/send_text.yaml --mock 2>&1
 ```
 
 Expected result:

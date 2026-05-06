@@ -4,10 +4,10 @@ This directory documents trace-derived datasets for CUA-Lark.
 
 Generated datasets are written under `datasets/generated/` and are ignored by Git because they can contain local run paths and references to real screenshots.
 
-## Phase 8 Export
+## Trace Dataset Export
 
 ```bash
-python -m cua_lark.main export-traces runs --out datasets/generated/feishuworld_phase8
+python -m cua_lark.main export-traces runs --out datasets/generated/feishuworld_export
 ```
 
 Files:

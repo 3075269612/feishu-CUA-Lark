@@ -23,7 +23,7 @@ CUA-Lark 不是飞书 API 自动化脚本，也不是泛化电脑 Agent。它面
 运行：
 
 ```powershell
-.\.conda310\python.exe -m cua_lark.main eval testcases\eval\feishuworld_real_smoke.yaml --profile real-smoke --runs-dir runs
+python -m cua_lark.main eval testcases\eval\feishuworld_real_smoke.yaml --profile real-smoke --runs-dir runs
 ```
 
 展示点：
@@ -32,10 +32,10 @@ CUA-Lark 不是飞书 API 自动化脚本，也不是泛化电脑 Agent。它面
 - Docs：点击 `云文档`，点击主页 `新建` 按钮，选择 `文档`，再点 `新建空白文档`，输入唯一标题。
 - 两个 case 都生成独立 trace 目录和 report。
 
-如果现场不方便真实执行，可以打开最近一次通过的报告：
+如果现场不方便真实执行，可以打开已保存的真实 smoke 报告：
 
 ```text
-runs\feishuworld_real_smoke_real-smoke_20260506_173201_138632\summary.md
+runs\<real-smoke-suite-dir>\summary.md
 ```
 
 ## 2:30 - 3:30 报告与证据
@@ -57,12 +57,12 @@ runs\feishuworld_real_smoke_real-smoke_20260506_173201_138632\summary.md
 - `failure_category`
 - `visual_api_agreement`
 
-## 3:30 - 4:30 Phase 8 数据资产
+## 3:30 - 4:30 Trace 数据资产
 
 运行：
 
 ```powershell
-.\.conda310\python.exe -m cua_lark.main export-traces runs --out datasets\generated\feishuworld_phase8 --include-products im,docs --max-runs 10
+python -m cua_lark.main export-traces runs --out datasets\generated\feishuworld_export --include-products im,docs --max-runs 10
 ```
 
 展示：
@@ -88,11 +88,11 @@ runs\feishuworld_real_smoke_real-smoke_20260506_173201_138632\summary.md
 Mock 快速回归：
 
 ```powershell
-.\.conda310\python.exe -m cua_lark.main eval testcases\eval\feishuworld_mock.yaml --profile mock --runs-dir runs
+python -m cua_lark.main eval testcases\eval\feishuworld_mock.yaml --profile mock --runs-dir runs
 ```
 
 全量单测：
 
 ```powershell
-.\.conda310\python.exe -m pytest tests
+python -m pytest tests
 ```

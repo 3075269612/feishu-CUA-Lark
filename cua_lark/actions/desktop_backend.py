@@ -63,6 +63,58 @@ class DryRunDesktopBackend:
         self.calls.append(("click", {"x": x, "y": y, "target": target}))
         return BackendResult(ok=True, reason="dry_run_click_planned", metadata={"x": x, "y": y, "target": target, "planned_only": True})
 
+    def double_click(self, x: int, y: int, target: str) -> BackendResult:
+        self.calls.append(("double_click", {"x": x, "y": y, "target": target}))
+        return BackendResult(
+            ok=True,
+            reason="dry_run_double_click_planned",
+            metadata={"x": x, "y": y, "target": target, "planned_only": True},
+        )
+
+    def right_click(self, x: int, y: int, target: str) -> BackendResult:
+        self.calls.append(("right_click", {"x": x, "y": y, "target": target}))
+        return BackendResult(
+            ok=True,
+            reason="dry_run_right_click_planned",
+            metadata={"x": x, "y": y, "target": target, "planned_only": True},
+        )
+
+    def drag(self, start_x: int, start_y: int, end_x: int, end_y: int, target: str, duration: float = 0.2) -> BackendResult:
+        self.calls.append(
+            (
+                "drag",
+                {
+                    "start_x": start_x,
+                    "start_y": start_y,
+                    "end_x": end_x,
+                    "end_y": end_y,
+                    "target": target,
+                    "duration": duration,
+                },
+            )
+        )
+        return BackendResult(
+            ok=True,
+            reason="dry_run_drag_planned",
+            metadata={
+                "start_x": start_x,
+                "start_y": start_y,
+                "end_x": end_x,
+                "end_y": end_y,
+                "target": target,
+                "duration": duration,
+                "planned_only": True,
+            },
+        )
+
+    def scroll(self, clicks: int, x: int | None = None, y: int | None = None, target: str | None = None) -> BackendResult:
+        self.calls.append(("scroll", {"clicks": clicks, "x": x, "y": y, "target": target}))
+        return BackendResult(
+            ok=True,
+            reason="dry_run_scroll_planned",
+            metadata={"clicks": clicks, "x": x, "y": y, "target": target, "planned_only": True},
+        )
+
     def hotkey(self, *keys: str) -> BackendResult:
         self.calls.append(("hotkey", {"keys": keys}))
         return BackendResult(ok=True, reason="dry_run_hotkey_planned", metadata={"keys": list(keys), "planned_only": True})
@@ -177,6 +229,49 @@ class PyAutoGuiBackend:
             return BackendResult(True, "clicked", {"backend": self.backend_name, "x": x, "y": y, "target": target})
         except Exception as exc:
             return BackendResult(False, f"click_failed:{exc}", {"backend": self.backend_name, "x": x, "y": y, "target": target})
+
+    def double_click(self, x: int, y: int, target: str) -> BackendResult:
+        try:
+            self._load_pyautogui().doubleClick(x, y)
+            return BackendResult(True, "double_clicked", {"backend": self.backend_name, "x": x, "y": y, "target": target})
+        except Exception as exc:
+            return BackendResult(False, f"double_click_failed:{exc}", {"backend": self.backend_name, "x": x, "y": y, "target": target})
+
+    def right_click(self, x: int, y: int, target: str) -> BackendResult:
+        try:
+            self._load_pyautogui().rightClick(x, y)
+            return BackendResult(True, "right_clicked", {"backend": self.backend_name, "x": x, "y": y, "target": target})
+        except Exception as exc:
+            return BackendResult(False, f"right_click_failed:{exc}", {"backend": self.backend_name, "x": x, "y": y, "target": target})
+
+    def drag(self, start_x: int, start_y: int, end_x: int, end_y: int, target: str, duration: float = 0.2) -> BackendResult:
+        metadata = {
+            "backend": self.backend_name,
+            "start_x": start_x,
+            "start_y": start_y,
+            "end_x": end_x,
+            "end_y": end_y,
+            "target": target,
+            "duration": duration,
+        }
+        try:
+            pyautogui = self._load_pyautogui()
+            pyautogui.moveTo(start_x, start_y)
+            pyautogui.dragTo(end_x, end_y, duration=duration, button="left")
+            return BackendResult(True, "dragged", metadata)
+        except Exception as exc:
+            return BackendResult(False, f"drag_failed:{exc}", metadata)
+
+    def scroll(self, clicks: int, x: int | None = None, y: int | None = None, target: str | None = None) -> BackendResult:
+        metadata = {"backend": self.backend_name, "clicks": clicks, "x": x, "y": y, "target": target}
+        try:
+            pyautogui = self._load_pyautogui()
+            if x is not None and y is not None:
+                pyautogui.moveTo(x, y)
+            pyautogui.scroll(clicks)
+            return BackendResult(True, "scrolled", metadata)
+        except Exception as exc:
+            return BackendResult(False, f"scroll_failed:{exc}", metadata)
 
     def hotkey(self, *keys: str) -> BackendResult:
         try:

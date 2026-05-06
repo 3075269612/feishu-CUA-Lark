@@ -65,10 +65,10 @@ Calendar 和 Cross-Product 保留状态机、mock 评测、trace 和叙事价值
 
 ## Failure Analysis 导出
 
-Phase 8 可以把失败样本单独导出，用于后续复盘和 few-shot 负例设计：
+Trace 导出器可以把失败样本单独导出，用于后续复盘和 few-shot 负例设计：
 
 ```powershell
-.\.conda310\python.exe -m cua_lark.main export-traces runs --out datasets\generated\failure_analysis --statuses blocked,fail,uncertain --max-runs 10
+python -m cua_lark.main export-traces runs --out datasets\generated\failure_analysis --statuses blocked,fail,uncertain --max-runs 10
 ```
 
 导出数据位于 `datasets/generated/`，默认不提交。
@@ -77,4 +77,4 @@ Phase 8 可以把失败样本单独导出，用于后续复盘和 few-shot 负�
 
 - 真实 UI 的价值在于可验证闭环，而不是盲目扩产品覆盖。
 - 对不稳定 UI 链路，应保留 trace、失败原因和 mock 回归，不应混入真实 smoke 成功率。
-- 对外展示应强调 FeishuWorld 评测体系、分层验证、trace-first 和 Phase 8 数据沉淀。
+- 对外展示应强调 FeishuWorld 评测体系、分层验证、trace-first 和数据沉淀。
