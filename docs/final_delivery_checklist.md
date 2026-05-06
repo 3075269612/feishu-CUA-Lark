@@ -6,7 +6,7 @@
 
 ```powershell
 git status --short --branch
-.\.conda310\python.exe -m pytest tests
+python -m pytest tests
 ```
 
 期望：
@@ -17,7 +17,7 @@ git status --short --branch
 ## 2. Mock 评测
 
 ```powershell
-.\.conda310\python.exe -m cua_lark.main eval testcases\eval\feishuworld_mock.yaml --profile mock --runs-dir runs
+python -m cua_lark.main eval testcases\eval\feishuworld_mock.yaml --profile mock --runs-dir runs
 ```
 
 检查最新输出目录中存在：
@@ -33,13 +33,13 @@ git status --short --branch
 真实 smoke 会发送飞书测试群消息并创建云文档：
 
 ```powershell
-.\.conda310\python.exe -m cua_lark.main eval testcases\eval\feishuworld_real_smoke.yaml --profile real-smoke --runs-dir runs
+python -m cua_lark.main eval testcases\eval\feishuworld_real_smoke.yaml --profile real-smoke --runs-dir runs
 ```
 
-已验证通过的基线报告：
+已保存的基线报告位于对应真实 smoke 输出目录：
 
 ```text
-runs\feishuworld_real_smoke_real-smoke_20260506_173201_138632\summary.md
+runs\<real-smoke-suite-dir>\summary.md
 ```
 
 稳定真实链路：
@@ -47,10 +47,10 @@ runs\feishuworld_real_smoke_real-smoke_20260506_173201_138632\summary.md
 - `im_send_text_real`：在 `CUA-Lark-Test` 群发送带 run_id 的消息。
 - `docs_create_blank_doc_real`：创建带唯一标题的云文档。
 
-## 4. Phase 8 数据导出
+## 4. Trace 数据导出
 
 ```powershell
-.\.conda310\python.exe -m cua_lark.main export-traces runs --out datasets\generated\feishuworld_phase8 --include-products im,docs --max-runs 10
+python -m cua_lark.main export-traces runs --out datasets\generated\feishuworld_export --include-products im,docs --max-runs 10
 ```
 
 检查输出：
@@ -65,7 +65,7 @@ runs\feishuworld_real_smoke_real-smoke_20260506_173201_138632\summary.md
 失败样本复盘可选：
 
 ```powershell
-.\.conda310\python.exe -m cua_lark.main export-traces runs --out datasets\generated\failure_analysis --statuses blocked,fail,uncertain --max-runs 10
+python -m cua_lark.main export-traces runs --out datasets\generated\failure_analysis --statuses blocked,fail,uncertain --max-runs 10
 ```
 
 ## 5. 演示顺序
@@ -75,20 +75,17 @@ runs\feishuworld_real_smoke_real-smoke_20260506_173201_138632\summary.md
 3. `summary.html`：展示指标、case、trace/report/截图路径。
 4. 单 case `report.md`：展示每步 action/verdict。
 5. `trace.jsonl`：展示可复现原始轨迹。
-6. Phase 8 导出目录：展示 JSONL 数据资产和 `mcp_manifest.json`。
+6. Trace 导出目录：展示 JSONL 数据资产和 `mcp_manifest.json`。
 
 ## 6. 最终 Git 操作
 
 ```powershell
 git checkout main
-git merge --no-ff feat/phase8-trace-tooling -m "Merge Phase 8 trace tooling"
+git merge --no-ff feat/final-required-compliance -m "Merge final required compliance"
 git push origin main
-git tag phase8-final
-git push origin phase8-final
 ```
 
 确认：
 
-- `main` 包含 Phase 8 和最终文档。
-- tag `phase8-final` 指向最终提交。
+- `main` 包含最终必做项补齐和通用化文档。
 - `runs/` 和 `datasets/generated/` 没有进入版本库。

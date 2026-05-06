@@ -1,13 +1,13 @@
-# Phase 8 Trace Tooling
+# Trace Tooling
 
-Phase 8 的目标是把已经跑通的 FeishuWorld trace 变成可复用数据资产，并为后续工具化和模型优化留出稳定接口。它不扩展真实 UI 功能，不接入新的运行时底座，也不做真实微调。
+Trace tooling 的目标是把已经跑通的 FeishuWorld trace 变成可复用数据资产，并为后续工具化和模型优化留出稳定接口。它不扩展真实 UI 功能，不接入新的运行时底座，也不做真实微调。
 
 最终交付入口见 `docs/final_delivery_checklist.md`；失败样本复盘见 `docs/failure_analysis.md`。
 
 ## 命令
 
 ```bash
-python -m cua_lark.main export-traces runs --out datasets/generated/feishuworld_phase8
+python -m cua_lark.main export-traces runs --out datasets/generated/feishuworld_export
 ```
 
 可选过滤：
@@ -30,7 +30,7 @@ python -m cua_lark.main export-traces runs --out datasets/generated/manual --sta
 
 ## Tool Registry
 
-Phase 8 只实现本地 tool registry，不启动 MCP Server。固定工具名为：
+当前只实现本地 tool registry，不启动 MCP Server。固定工具名为：
 
 - `feishuworld.eval.run_suite`
 - `feishuworld.trace.export`
@@ -52,10 +52,10 @@ Phase 8 只实现本地 tool registry，不启动 MCP Server。固定工具名�
 ## 验证
 
 ```bash
-.\.conda310\python.exe -m pytest tests
+python -m pytest tests
 ```
 
-Phase 8 不要求再次真实操作飞书。真实 smoke 的验证基线来自最近一次通过的 `feishuworld_real_smoke` suite。
+Trace tooling 不要求再次真实操作飞书。真实 smoke 的验证基线来自已保存的 `feishuworld_real_smoke` suite。
 
 失败样本可单独导出到 ignored 目录做复盘：
 
