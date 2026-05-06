@@ -29,9 +29,9 @@ class DocsCreateStage(IntEnum):
 # Mapping each stage to the grounding target description for the VLM.
 STAGE_TARGET_DESCRIPTIONS: dict[DocsCreateStage, str] = {
     DocsCreateStage.STAGE_CLICK_CLOUD_DOCS: "云文档",
-    DocsCreateStage.STAGE_CLICK_NEW: "新建",
-    DocsCreateStage.STAGE_CLICK_DOC_TYPE: "文档",
-    DocsCreateStage.STAGE_CLICK_NEW_BLANK: "新建空白文档",
+    DocsCreateStage.STAGE_CLICK_NEW: "云文档主页中的新建入口，文字为新建或新建文档开始协作",
+    DocsCreateStage.STAGE_CLICK_DOC_TYPE: "新建菜单弹层中的文档类型选项，不是文档列表或文档入口",
+    DocsCreateStage.STAGE_CLICK_NEW_BLANK: "模板页或新建文档页中的新建空白文档按钮",
     DocsCreateStage.STAGE_INPUT_TITLE: "请输入标题",
 }
 
@@ -215,6 +215,10 @@ class DocsCreateSkill:
         accessibility_candidates: list[dict[str, Any]],
         dry_run: bool,
     ) -> tuple[Action, Verdict]:
+        stage_action = self._execute_stage_specific_click(backend, ocr_texts, dry_run)
+        if stage_action is not None:
+            return stage_action
+
         target_desc = self.grounding_target_description
         point = grounder.locate_target(
             target_desc,
@@ -251,6 +255,95 @@ class DocsCreateSkill:
                 reason=result.reason,
                 evidence={**metadata, **(result.metadata or {})},
             ),
+        )
+
+    def _execute_stage_specific_click(
+        self,
+        backend: Any,
+        ocr_texts: list[dict[str, Any]],
+        dry_run: bool,
+    ) -> tuple[Action, Verdict] | None:
+        if not ocr_texts:
+            return None
+
+        if self.stage == DocsCreateStage.STAGE_CLICK_NEW:
+            candidate = _find_ocr_candidate(ocr_texts, {"新建"}, x_min=350, y_max=450)
+            if candidate is not None:
+                return self._click_candidate(backend, candidate, "新建", dry_run, "ocr_exact_stage_target")
+
+        if self.stage == DocsCreateStage.STAGE_CLICK_DOC_TYPE:
+            candidate = _find_ocr_candidate(ocr_texts, {"文档"}, x_min=700, y_min=250, y_max=900)
+            if candidate is not None:
+                return self._click_candidate(backend, candidate, "文档", dry_run, "ocr_exact_menu_item")
+            reopen = _find_ocr_candidate(ocr_texts, {"新建"}, x_min=350, y_max=450)
+            if reopen is not None:
+                return self._click_candidate(
+                    backend,
+                    reopen,
+                    "新建",
+                    dry_run,
+                    "ocr_reopen_new_menu",
+                    reason="doc_type_menu_missing_reopen_new",
+                    advance_stage=False,
+                )
+            return self._blocked_precondition("doc_type_menu_not_visible", {"required_text": "文档"})
+
+        if self.stage == DocsCreateStage.STAGE_CLICK_NEW_BLANK:
+            candidate = _find_ocr_candidate(ocr_texts, {"新建空白文档"}, x_min=700)
+            if candidate is not None:
+                return self._click_candidate(backend, candidate, "新建空白文档", dry_run, "ocr_exact_template_item")
+            reopen = _find_ocr_candidate(ocr_texts, {"新建"}, x_min=350, y_max=450)
+            if reopen is not None:
+                return self._click_candidate(
+                    backend,
+                    reopen,
+                    "新建",
+                    dry_run,
+                    "ocr_reopen_new_template",
+                    reason="new_blank_doc_missing_reopen_new",
+                    advance_stage=False,
+                )
+            return self._blocked_precondition("new_blank_doc_not_visible", {"required_text": "新建空白文档"})
+
+        return None
+
+    def _click_candidate(
+        self,
+        backend: Any,
+        candidate: dict[str, Any],
+        target: str,
+        dry_run: bool,
+        coordinate_source: str,
+        reason: str = "clicked",
+        advance_stage: bool = True,
+    ) -> tuple[Action, Verdict]:
+        bbox = candidate.get("bbox") or []
+        x, y = _bbox_center(bbox)
+        result = backend.click(x, y, target)
+        metadata = {
+            "stage": self.stage.label,
+            "target_desc": target,
+            "coordinate_source": coordinate_source,
+            "ocr_text": candidate.get("text"),
+            "ocr_bbox": bbox,
+            "screenshot_point": [x, y],
+            "advance_stage": advance_stage,
+            **(result.metadata or {}),
+        }
+        return (
+            Action(type="click", target=target, coordinates=(x, y), mock=dry_run, metadata=metadata),
+            Verdict(
+                status="pass" if result.ok else "blocked",
+                reason=result.reason if not result.ok else reason,
+                evidence=metadata,
+            ),
+        )
+
+    def _blocked_precondition(self, reason: str, evidence: dict[str, Any]) -> tuple[Action, Verdict]:
+        metadata = {"stage": self.stage.label, **evidence}
+        return (
+            Action(type="observe", target=self.grounding_target_description, mock=True, metadata=metadata),
+            Verdict(status="blocked", reason=reason, evidence=metadata),
         )
 
     def _execute_input_title(
@@ -300,3 +393,38 @@ class DocsCreateSkill:
             evidence={"stage": self.stage.label, "target_doc": self.target_doc, **(paste_result.metadata or {})},
         )
         return action, verdict
+
+
+def _find_ocr_candidate(
+    ocr_texts: list[dict[str, Any]],
+    texts: set[str],
+    x_min: float | None = None,
+    y_min: float | None = None,
+    y_max: float | None = None,
+) -> dict[str, Any] | None:
+    candidates: list[dict[str, Any]] = []
+    for item in ocr_texts:
+        text = str(item.get("text", "")).strip()
+        if text not in texts:
+            continue
+        bbox = item.get("bbox")
+        if not bbox or len(bbox) != 4:
+            continue
+        x1, y1, x2, y2 = [float(value) for value in bbox]
+        if x_min is not None and x1 < x_min:
+            continue
+        if y_min is not None and y1 < y_min:
+            continue
+        if y_max is not None and y2 > y_max:
+            continue
+        candidates.append(item)
+    if not candidates:
+        return None
+    return sorted(candidates, key=lambda item: (float((item.get("bbox") or [0, 0, 0, 0])[1]), float((item.get("bbox") or [0, 0, 0, 0])[0])))[0]
+
+
+def _bbox_center(bbox: list[Any]) -> tuple[int, int]:
+    if len(bbox) != 4:
+        return 0, 0
+    x1, y1, x2, y2 = [float(value) for value in bbox]
+    return int((x1 + x2) / 2), int((y1 + y2) / 2)

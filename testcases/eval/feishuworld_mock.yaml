@@ -1,0 +1,51 @@
+id: feishuworld_mock
+description: "FeishuWorld mock regression suite for Phase 7 reporting"
+cases:
+  - id: im_send_text
+    task_path: testcases/im/send_text.yaml
+    product: im
+    profiles: [mock]
+    tags: [im, stable, regression]
+    expected_statuses: [pass]
+  - id: im_search_chat
+    task_path: testcases/im/search_chat.yaml
+    product: im
+    profiles: [mock]
+    tags: [im, regression]
+    expected_statuses: [pass]
+  - id: im_mention_user
+    task_path: testcases/im/mention_user.yaml
+    product: im
+    profiles: [mock]
+    tags: [im, regression]
+    expected_statuses: [pass]
+  - id: im_mixed_content
+    task_path: testcases/im/mixed_content.yaml
+    product: im
+    profiles: [mock]
+    tags: [im, regression]
+    expected_statuses: [pass]
+  - id: calendar_create_event
+    task_path: testcases/calendar/create_event.yaml
+    product: calendar
+    profiles: [mock]
+    tags: [calendar, regression]
+    expected_statuses: [pass]
+  - id: docs_create_blank_doc
+    task_path: testcases/docs/create_blank_doc.yaml
+    product: docs
+    profiles: [mock]
+    tags: [docs, stable, regression]
+    expected_statuses: [pass]
+  - id: docs_create_doc
+    task_path: testcases/docs/create_doc.yaml
+    product: docs
+    profiles: [mock]
+    tags: [docs, regression]
+    expected_statuses: [pass]
+  - id: cross_product_kickoff
+    task_path: testcases/cross_product/kickoff_flow.yaml
+    product: cross_product
+    profiles: [mock]
+    tags: [cross_product, regression]
+    expected_statuses: [pass]

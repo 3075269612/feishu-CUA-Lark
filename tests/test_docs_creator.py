@@ -182,6 +182,68 @@ class TestExecuteStageDryRun:
         assert skill.is_done
         assert len(backend.calls) >= 5
 
+    def test_doc_type_stage_clicks_exact_menu_item_from_ocr(self) -> None:
+        skill = DocsCreateSkill(target_doc="CUA-Dark-Test-Doc")
+        for _ in range(2):
+            skill.advance()
+        backend = self._make_fake_backend()
+        grounder = self._make_fake_grounder(point=(999, 999))
+
+        action, verdict = skill.execute_stage(
+            backend,
+            grounder,
+            None,
+            [{"text": "文档", "bbox": [1108, 443, 1177, 487], "confidence": 0.99}],
+            [],
+            dry_run=False,
+        )
+
+        assert action.coordinates == (1142, 465)
+        assert action.metadata["coordinate_source"] == "ocr_exact_menu_item"
+        assert verdict.status == "pass"
+
+    def test_new_blank_stage_reopens_new_without_advancing_when_blank_missing(self) -> None:
+        skill = DocsCreateSkill(target_doc="CUA-Dark-Test-Doc")
+        for _ in range(3):
+            skill.advance()
+        backend = self._make_fake_backend()
+        grounder = self._make_fake_grounder(point=(999, 999))
+
+        action, verdict = skill.execute_stage(
+            backend,
+            grounder,
+            None,
+            [{"text": "新建", "bbox": [1104, 222, 1179, 269], "confidence": 0.99}],
+            [],
+            dry_run=False,
+        )
+
+        assert action.target == "新建"
+        assert action.coordinates == (1141, 245)
+        assert action.metadata["advance_stage"] is False
+        assert verdict.reason == "new_blank_doc_missing_reopen_new"
+
+    def test_new_blank_stage_clicks_exact_template_item_from_ocr(self) -> None:
+        skill = DocsCreateSkill(target_doc="CUA-Dark-Test-Doc")
+        for _ in range(3):
+            skill.advance()
+        backend = self._make_fake_backend()
+        grounder = self._make_fake_grounder(point=(999, 999))
+
+        action, verdict = skill.execute_stage(
+            backend,
+            grounder,
+            None,
+            [{"text": "新建空白文档", "bbox": [1138, 709, 1288, 743], "confidence": 0.99}],
+            [],
+            dry_run=False,
+        )
+
+        assert action.target == "新建空白文档"
+        assert action.coordinates == (1213, 726)
+        assert action.metadata["coordinate_source"] == "ocr_exact_template_item"
+        assert verdict.status == "pass"
+
 
 class _FakeResult:
     def __init__(self, ok, reason="ok", metadata=None):

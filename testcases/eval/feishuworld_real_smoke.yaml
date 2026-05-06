@@ -1,0 +1,27 @@
+id: feishuworld_real_smoke
+description: "Real UI smoke suite limited to confirmed stable Feishu/Lark flows"
+cases:
+  - id: im_send_text_real_dry_run
+    task_path: testcases/im/send_text.yaml
+    product: im
+    profiles: [real-smoke-dry-run]
+    tags: [im, stable, real-ui]
+    expected_statuses: [uncertain]
+  - id: im_send_text_real
+    task_path: testcases/im/send_text.yaml
+    product: im
+    profiles: [real-smoke]
+    tags: [im, stable, real-ui]
+    expected_statuses: [pass, needs_manual_verification, sent_with_screenshot_evidence]
+  - id: docs_create_blank_doc_real_dry_run
+    task_path: testcases/docs/create_blank_doc.yaml
+    product: docs
+    profiles: [real-smoke-dry-run]
+    tags: [docs, stable, real-ui]
+    expected_statuses: [pass, uncertain]
+  - id: docs_create_blank_doc_real
+    task_path: testcases/docs/create_blank_doc.yaml
+    product: docs
+    profiles: [real-smoke]
+    tags: [docs, stable, real-ui]
+    expected_statuses: [pass, needs_manual_verification, sent_with_screenshot_evidence]

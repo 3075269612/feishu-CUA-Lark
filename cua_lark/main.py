@@ -22,6 +22,7 @@ from cua_lark.trace import TraceRecorder
 from cua_lark.calendar.creator import CalendarCreateSkill, CalendarCreateStage
 from cua_lark.cross_product.kickoff import CrossProductSkill, CrossProductStage, ImSendSubStage
 from cua_lark.docs.creator import DocsCreateSkill, DocsCreateStage
+from cua_lark.eval.runner import run_eval_suite
 from cua_lark.verifier import ImVerifierChain, MockVerifier
 
 
@@ -42,6 +43,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     run.add_argument("--strict-verification", action="store_true")
     run.add_argument("--grounding", default="hybrid", choices=["hybrid"], help="Use VLM + OCR + Accessibility hybrid grounding")
+
+    eval_cmd = subparsers.add_parser("eval", help="Run a FeishuWorld eval suite")
+    eval_cmd.add_argument("suite_path", help="Path to eval suite YAML")
+    eval_cmd.add_argument("--profile", default="mock", choices=["mock", "real-smoke-dry-run", "real-smoke"])
+    eval_cmd.add_argument("--runs-dir", default="runs")
     return parser
 
 
@@ -217,9 +223,26 @@ def _real_ui_docs_create_and_act(
 
     skill = DocsCreateSkill(target_doc=target_doc)
     grounder = HybridGrounder()
+    stage_attempts: dict[str, int] = {}
 
     while not skill.is_done:
         stage = skill.stage
+        stage_attempts[stage.label] = stage_attempts.get(stage.label, 0) + 1
+        if stage_attempts[stage.label] > 3:
+            verdict = Verdict(
+                status="blocked",
+                reason="docs_stage_attempt_limit_exceeded",
+                evidence={"stage": stage.label, "attempts": stage_attempts[stage.label]},
+            )
+            _record_real_step(
+                recorder,
+                trace,
+                step_index + 1,
+                f"Docs stage attempt limit exceeded: {stage.label}",
+                Action(type="docs_stage_guard", target=stage.label, mock=args.dry_run),
+                verdict,
+            )
+            return "blocked"
         step_index += 1
 
         screenshot = backend.screenshot(Path(trace.trace_dir) / f"step_{step_index:03d}_observe.png")
@@ -273,9 +296,85 @@ def _real_ui_docs_create_and_act(
         if verdict.status not in ("pass", "uncertain", "needs_manual_verification"):
             return "blocked"
 
-        skill.advance()
+        if verdict.evidence.get("advance_stage", True):
+            skill.advance()
 
-    return "pass"
+    if args.dry_run:
+        return "uncertain"
+    if not allow_edit:
+        return "needs_manual_verification"
+    return _real_ui_verify_docs_create(task, trace, recorder, backend, desktop_config)
+
+
+def _real_ui_verify_docs_create(
+    task: TaskSpec,
+    trace: Trace,
+    recorder: TraceRecorder,
+    backend: Any,
+    desktop_config: dict[str, Any],
+) -> str:
+    step_index = max((event.step_index or 0 for event in trace.events), default=0) + 1
+    screenshot = backend.screenshot(Path(trace.trace_dir) / f"step_{step_index:03d}_verify_docs.png")
+    screenshot_path = (screenshot.metadata or {}).get("path") if screenshot.ok else None
+    ocr_texts: list[dict[str, Any]] = []
+    if screenshot_path:
+        ocr_texts = OcrClient().extract(str(screenshot_path))
+    target_doc = str(task.slots.get("target_doc", ""))
+    goal = StepGoal(
+        index=step_index,
+        description="Verify docs creation postcondition",
+        target=target_doc,
+        expected="new document editor is open and the unique title is visible",
+    )
+    summary = _summarize_visual_goal(
+        goal,
+        screenshot_path,
+        ocr_texts,
+        allow_vlm=not bool((screenshot.metadata or {}).get("planned_only")),
+    )
+    verdict = _docs_create_verdict(target_doc, summary, ocr_texts, screenshot.metadata or {})
+    observation = Observation(
+        step_index=step_index,
+        screen_summary=summary,
+        screenshot_path=str(screenshot_path) if screenshot_path else None,
+        ocr_texts=ocr_texts,
+        accessibility_candidates=[],
+        metadata={"real_ui": True, "grounding": "hybrid", "stage": "VERIFY_DOCS_CREATE", **(screenshot.metadata or {})},
+    )
+    action = Action(
+        type="verify_docs_create",
+        target=target_doc,
+        mock=False,
+        metadata={"target_doc": target_doc, "screenshot_path": screenshot_path},
+    )
+    recorder.record_step(trace, observation, action, verdict, metadata={"stage": "VERIFY_DOCS_CREATE"})
+    trace.metadata["docs_verification_summary"] = verdict.evidence
+    return verdict.status
+
+
+def _docs_create_verdict(
+    target_doc: str,
+    summary: str,
+    ocr_texts: list[dict[str, Any]],
+    screenshot_metadata: dict[str, Any],
+) -> Verdict:
+    visible_text = "\n".join(str(item.get("text", "")) for item in ocr_texts)
+    combined = f"{summary}\n{visible_text}"
+    title_found = bool(target_doc) and target_doc in combined
+    list_markers = ("文档列表", "最近访问", "所有者", "创建时间", "位置", "模板库", "上传本地文件", "未直接显示标题输入区")
+    list_marker_hits = [marker for marker in list_markers if marker in combined]
+    editor_markers = ("标题输入区", "文档页面", "编辑页", "正文", "请输入标题")
+    editor_marker_hits = [marker for marker in editor_markers if marker in combined]
+    evidence = {
+        "target_doc": target_doc,
+        "title_found": title_found,
+        "list_marker_hits": list_marker_hits,
+        "editor_marker_hits": editor_marker_hits,
+        "after_screenshot": screenshot_metadata.get("path"),
+    }
+    if title_found and "未直接显示标题输入区" not in list_marker_hits and (editor_marker_hits or not list_marker_hits):
+        return Verdict(status="pass", reason="docs_create_verified", evidence=evidence)
+    return Verdict(status="blocked", reason="docs_create_not_verified_postcondition", evidence=evidence)
 
 
 def _real_ui_cross_product_and_act(
@@ -906,11 +1005,34 @@ def run_task(args: argparse.Namespace) -> int:
     return 2
 
 
+def run_eval_command(args: argparse.Namespace) -> int:
+    try:
+        code, summary, json_path, md_path = run_eval_suite(
+            args.suite_path,
+            profile=args.profile,
+            runs_dir=args.runs_dir,
+            run_command=lambda argv: main(argv),
+        )
+    except Exception as exc:
+        print(f"Eval failed: {exc}")
+        return 2
+
+    print("Eval suite completed.")
+    print(f"Suite: {summary['suite_id']}")
+    print(f"Profile: {summary['profile']}")
+    print(f"Status: {'pass' if code == 0 else 'fail'}")
+    print(f"Summary JSON: {json_path}")
+    print(f"Summary Markdown: {md_path}")
+    return code
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.command == "run":
         return run_task(args)
+    if args.command == "eval":
+        return run_eval_command(args)
     parser.error(f"Unknown command: {args.command}")
     return 2
 

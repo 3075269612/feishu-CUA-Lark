@@ -130,3 +130,19 @@ python -m cua_lark.main run testcases/cross_product/kickoff_flow.yaml --real-ui 
 ## Phase 7：评测集与报告
 
 构建 FeishuWorld 小型评测集，统计成功率、平均步数、耗时、恢复次数、失败分类和视觉/API 一致性。
+
+状态：已实现批量评测入口和聚合报告。
+
+已实现：
+
+- `python -m cua_lark.main eval <suite.yaml> --profile mock --runs-dir runs`
+- `testcases/eval/feishuworld_mock.yaml`：覆盖 IM、Calendar、Docs、Cross-Product 的 mock 回归评测。
+- `testcases/eval/feishuworld_real_smoke.yaml`：只包含真实 smoke 链路中的 IM 发消息和 Docs 创建标题文档。
+- 每个 case 复用现有单用例 `run` 流程，单独生成 trace，再聚合输出 `summary.json` 和 `summary.md`。
+- 指标包含 `task_success_rate`、`step_success_rate`、`mean_steps`、`mean_time`、`recovery_count`、`failure_category`、`visual_api_agreement`。
+
+成功口径：
+
+- `pass` 计入成功。
+- `needs_manual_verification`、`sent_with_screenshot_evidence` 计入 manual bucket。
+- `blocked`、`fail`、`uncertain` 计入非成功。

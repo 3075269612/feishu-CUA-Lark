@@ -28,7 +28,12 @@ def _apply_common_monkeypatches(monkeypatch, main_module):
 
     class FakeOcrClient:
         def extract(self, screenshot_path):
-            return [{"text": "云文档", "bbox": [0, 0, 100, 20], "confidence": 0.95}]
+            return [
+                {"text": "云文档", "bbox": [0, 0, 100, 20], "confidence": 0.95},
+                {"text": "新建", "bbox": [1104, 222, 1179, 269], "confidence": 0.99},
+                {"text": "文档", "bbox": [1108, 443, 1177, 487], "confidence": 0.99},
+                {"text": "新建空白文档", "bbox": [1138, 709, 1288, 743], "confidence": 0.99},
+            ]
 
     class FakeAccessibility:
         def extract_elements(self, window_title=None, max_depth=4, include_invisible=False):
@@ -43,6 +48,15 @@ def _apply_common_monkeypatches(monkeypatch, main_module):
     monkeypatch.setattr(main_module, "VlmClient", FakeVlmClient)
     monkeypatch.setattr(main_module, "OcrClient", FakeOcrClient)
     monkeypatch.setattr(main_module, "AccessibilityExtractor", FakeAccessibility)
+    monkeypatch.setattr(
+        main_module,
+        "_docs_create_verdict",
+        lambda target_doc, summary, ocr_texts, screenshot_metadata: main_module.Verdict(
+            status="pass",
+            reason="docs_create_verified",
+            evidence={"target_doc": target_doc},
+        ),
+    )
     monkeypatch.setattr(
         main_module,
         "load_feishu_verification_config",
