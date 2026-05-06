@@ -15,9 +15,12 @@ from cua_lark.perception.accessibility import AccessibilityExtractor
 from cua_lark.perception.ocr import OcrClient
 from cua_lark.perception.vlm import VlmClient
 from cua_lark.task.loader import load_task
+from cua_lark.task.nl_parser import parse_natural_language
 from cua_lark.task.parser import render_task
 from cua_lark.task.schema import Action, Observation, StepGoal, TaskSpec, Trace, Verdict
 from cua_lark.trace import TraceRecorder
+from cua_lark.calendar.creator import CalendarCreateSkill, CalendarCreateStage
+from cua_lark.cross_product.kickoff import CrossProductSkill, CrossProductStage, ImSendSubStage
 from cua_lark.docs.creator import DocsCreateSkill, DocsCreateStage
 from cua_lark.verifier import ImVerifierChain, MockVerifier
 
@@ -26,7 +29,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="cua-lark")
     subparsers = parser.add_subparsers(dest="command", required=True)
     run = subparsers.add_parser("run", help="Run a testcase")
-    run.add_argument("task_path")
+    run.add_argument("task_path", nargs="?", default=None, help="Path to YAML testcase (omit when using --nl)")
+    run.add_argument("--nl", default=None, metavar="TEXT", help="Natural language task description (instead of YAML file)")
     run.add_argument("--mock", action="store_true", help="Use the safe mock execution loop")
     run.add_argument("--real-ui", action="store_true", help="Use the real desktop UI backend")
     run.add_argument("--safety-config", default="configs/safety.yaml")
@@ -46,7 +50,7 @@ def run_mock_task(args: argparse.Namespace) -> int:
         print("Only --mock execution is enabled in Phase 1 mock runner.")
         return 2
 
-    raw_task = load_task(args.task_path)
+    raw_task = _resolve_task(args)
     run_id = _new_run_id()
     task = render_task(raw_task, run_id)
     recorder = TraceRecorder(args.runs_dir)
@@ -101,7 +105,7 @@ def run_real_ui_task(args: argparse.Namespace) -> int:
         print("--confirm-target is required for --real-ui.")
         return 2
 
-    raw_task = load_task(args.task_path)
+    raw_task = _resolve_task(args)
     run_id = _new_run_id()
     task = render_task(raw_task, run_id)
     message = str(task.slots.get("message", ""))
@@ -139,7 +143,18 @@ def run_real_ui_task(args: argparse.Namespace) -> int:
         "execution_mode": execution_mode,
         "grounding": args.grounding,
         "last_visual_grounding": {},
+        "run_id": run_id,
     }
+
+    if task.product == "cross_product":
+        final_status = _real_ui_cross_product_and_act(args, task, trace, recorder, backend, context)
+        recorder.finalize(trace, final_status)
+        report_path = recorder.write_report(trace)
+        print("Real UI cross product run completed.")
+        print(f"Status: {trace.status}")
+        print(f"Trace dir: {trace.trace_dir}")
+        print(f"Report: {report_path}")
+        return _exit_code_for_status(final_status, dry_run=args.dry_run, strict=args.strict_verification)
 
     if task.product == "docs":
         final_status = _real_ui_docs_create_and_act(args, task, trace, recorder, backend, context)
@@ -254,6 +269,102 @@ def _real_ui_docs_create_and_act(
             metadata={"real_ui": True, "grounding": "hybrid", "stage": stage.label, **(screenshot.metadata or {})},
         )
         recorder.record_step(trace, observation, action, verdict, metadata={"stage": stage.label, "guidance": guidance})
+
+        if verdict.status not in ("pass", "uncertain", "needs_manual_verification"):
+            return "blocked"
+
+        skill.advance()
+
+    return "pass"
+
+
+def _real_ui_cross_product_and_act(
+    args: argparse.Namespace,
+    task: TaskSpec,
+    trace: Trace,
+    recorder: TraceRecorder,
+    backend: Any,
+    context: dict[str, Any],
+) -> str:
+    """Run the CrossProductSkill state machine for kickoff flow."""
+    desktop_config = context["desktop_config"]
+    title_candidates = list(desktop_config.get("window_title_candidates", ["Feishu", "飞书"]))
+    screen_width, screen_height = _config_screen_size(desktop_config)
+
+    event_title = str(task.slots.get("event_title", ""))
+    folder_name = str(task.slots.get("folder_name", ""))
+    chat_name = str(task.slots.get("chat_name", ""))
+    run_id = context.get("run_id", str(task.slots.get("_run_id", _new_run_id())))
+
+    step_index = 1
+    focus = backend.focus_window(title_candidates)
+    focus_status = "pass" if focus.ok else "blocked"
+    _record_real_step(
+        recorder, trace, step_index,
+        "Focus Feishu window for cross-product flow",
+        Action(type="focus_window", target="Feishu", mock=args.dry_run, metadata=focus.metadata or {}),
+        Verdict(status=focus_status, reason=focus.reason, evidence=focus.metadata or {}),
+    )
+    if not focus.ok:
+        return "blocked"
+
+    allow_edit = bool(args.allow_send and not args.dry_run)
+    skill = CrossProductSkill(
+        event_title=event_title,
+        folder_name=folder_name,
+        chat_name=chat_name,
+        run_id=run_id,
+    )
+    grounder = HybridGrounder()
+
+    while not skill.is_done:
+        meta_stage = skill.stage
+        sub_label = skill.current_sub_task
+        step_index += 1
+
+        screenshot = backend.screenshot(Path(trace.trace_dir) / f"step_{step_index:03d}_observe.png")
+        screenshot_path = (screenshot.metadata or {}).get("path") if screenshot.ok else None
+
+        ocr_texts: list[dict[str, Any]] = []
+        accessibility_candidates: list[dict[str, Any]] = []
+        if screenshot_path:
+            ocr_texts = OcrClient().extract(str(screenshot_path))
+            accessibility_candidates = _extract_accessibility_candidates(desktop_config)
+
+        guidance = skill.guidance_prompt()
+        stage_goals = skill.stage_step_goals()
+        primary_goal = stage_goals[0] if stage_goals else StepGoal(
+            index=step_index, description=guidance, target="cross_product", expected="stage complete"
+        )
+        summary = _summarize_visual_goal(
+            primary_goal, screenshot_path, ocr_texts,
+            allow_vlm=not bool((screenshot.metadata or {}).get("planned_only")),
+        )
+
+        action, verdict = skill.execute_stage(
+            backend, grounder, screenshot_path, ocr_texts, accessibility_candidates,
+            dry_run=args.dry_run or not allow_edit,
+            screen_width=screen_width, screen_height=screen_height,
+        )
+
+        observation = Observation(
+            step_index=step_index,
+            screen_summary=summary,
+            screenshot_path=str(screenshot_path) if screenshot_path else None,
+            ocr_texts=ocr_texts,
+            accessibility_candidates=accessibility_candidates,
+            metadata={
+                "real_ui": True,
+                "grounding": "hybrid",
+                "meta_stage": meta_stage.label,
+                "sub_task": sub_label,
+                **(screenshot.metadata or {}),
+            },
+        )
+        recorder.record_step(
+            trace, observation, action, verdict,
+            metadata={"meta_stage": meta_stage.label, "sub_task": sub_label, "guidance": guidance},
+        )
 
         if verdict.status not in ("pass", "uncertain", "needs_manual_verification"):
             return "blocked"
@@ -763,7 +874,27 @@ def _new_run_id() -> str:
     return datetime.now().strftime("%Y%m%d_%H%M%S_%f")
 
 
+def _resolve_task(args: argparse.Namespace) -> TaskSpec:
+    """Resolve a TaskSpec from --nl natural language or --task_path YAML file."""
+    nl_task = getattr(args, "_nl_task", None)
+    if nl_task is not None:
+        return nl_task
+    return load_task(args.task_path)
+
+
 def run_task(args: argparse.Namespace) -> int:
+    if bool(args.task_path) and bool(args.nl):
+        print("Specify either task_path or --nl, not both.")
+        return 2
+    if not args.task_path and not args.nl:
+        print("Specify a task_path or --nl <natural language task>.")
+        return 2
+    if args.nl:
+        try:
+            args._nl_task = parse_natural_language(args.nl)
+        except Exception as exc:
+            print(f"NL parsing failed: {exc}")
+            return 2
     if args.mock and args.real_ui:
         print("--mock and --real-ui are mutually exclusive.")
         return 2

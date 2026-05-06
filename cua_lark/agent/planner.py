@@ -34,6 +34,27 @@ class MockPlanner:
             for i, goal in enumerate(goals):
                 goals[i] = goal.model_copy(update={"index": i + 1})
             return goals
+        if task.product == "cross_product":
+            from cua_lark.cross_product.kickoff import CrossProductSkill
+
+            event_title = str(task.slots.get("event_title", ""))
+            folder_name = str(task.slots.get("folder_name", ""))
+            chat_name = str(task.slots.get("chat_name", ""))
+            run_id = "mock_run_id"
+
+            skill = CrossProductSkill(
+                event_title=event_title,
+                folder_name=folder_name,
+                chat_name=chat_name,
+                run_id=run_id,
+            )
+            goals: list[StepGoal] = []
+            while not skill.is_done:
+                goals.extend(skill.stage_step_goals())
+                skill.advance()
+            for i, goal in enumerate(goals):
+                goals[i] = goal.model_copy(update={"index": i + 1})
+            return goals
         return [
             StepGoal(index=1, description=f"Mock plan for {task.product}", target=task.product, expected="mock step passes"),
         ]
