@@ -85,6 +85,7 @@ def _run_case(case: EvalCase, profile: str, output_dir: Path, run_command: RunCo
         "recovery_count": parsed.get("recovery_count", 0),
         "failure_category": parsed.get("failure_category"),
         "verification_evidence": parsed.get("verification_evidence", []),
+        "screenshot_paths": parsed.get("screenshot_paths", []),
         "trace_dir": str(trace_dir) if trace_dir else None,
         "report_path": str(trace_dir / "report.md") if trace_dir and (trace_dir / "report.md").exists() else None,
         "argv": argv,
@@ -145,6 +146,7 @@ def _parse_trace(trace_dir: Path) -> dict[str, Any]:
         "recovery_count": sum(1 for event in events if event.get("event_type") == "recovery"),
         "failure_category": failure_category,
         "verification_evidence": _verification_evidence(step_events),
+        "screenshot_paths": _screenshot_paths(step_events),
     }
 
 
@@ -197,6 +199,25 @@ def _verification_evidence(step_events: list[dict[str, Any]]) -> list[dict[str, 
         if isinstance(evidences, list):
             return [item for item in evidences if isinstance(item, dict)]
     return []
+
+
+def _screenshot_paths(step_events: list[dict[str, Any]]) -> list[str]:
+    paths: list[str] = []
+    seen: set[str] = set()
+    for event in step_events:
+        observation = event.get("observation") if isinstance(event.get("observation"), dict) else {}
+        metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+        candidates = [
+            observation.get("screenshot_path"),
+            metadata.get("before_screenshot"),
+            metadata.get("after_screenshot"),
+        ]
+        for candidate in candidates:
+            if not isinstance(candidate, str) or not candidate or candidate in seen:
+                continue
+            paths.append(candidate)
+            seen.add(candidate)
+    return paths
 
 
 def _exit_code(summary: dict[str, Any]) -> int:

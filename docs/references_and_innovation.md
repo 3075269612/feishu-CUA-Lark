@@ -2,6 +2,8 @@
 
 本项目允许参考开源项目和论文思想，但当前代码没有把 UI-TARS、Touchpoint、OpenCLI、MCP、GUI-R1 或 ScaleCUA 作为运行时硬依赖。CUA-Lark 的主链路仍然是自研的视觉优先飞书桌面端测试框架。
 
+最终演示和交付检查见 `docs/demo_script.md` 与 `docs/final_delivery_checklist.md`。
+
 ## 参考来源
 
 | 来源 | 当前使用方式 |

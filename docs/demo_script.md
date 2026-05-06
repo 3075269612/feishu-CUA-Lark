@@ -2,6 +2,12 @@
 
 目标：用 5 分钟展示 CUA-Lark 是一个视觉优先、可验证、可复现的飞书桌面端智能测试代理。
 
+配套材料：
+
+- 最终交付检查：`docs/final_delivery_checklist.md`
+- 引用来源与自研说明：`docs/references_and_innovation.md`
+- 失败复盘：`docs/failure_analysis.md`
+
 ## 0:00 - 0:30 项目定位
 
 CUA-Lark 不是飞书 API 自动化脚本，也不是泛化电脑 Agent。它面向飞书桌面端，通过截图理解 UI，通过鼠标键盘完成真实用户操作，再用视觉、OCR、Accessibility Tree 和飞书 OpenAPI 做多重验证，最后生成 trace 和评测报告。
@@ -38,7 +44,7 @@ runs\feishuworld_real_smoke_real-smoke_20260506_173201_138632\summary.md
 
 - `summary.json`：机器可读指标。
 - `summary.md`：评测摘要。
-- `summary.html`：轻量展示页。
+- `summary.html`：轻量展示页，包含 trace、report 和截图路径入口。
 - 单 case `report.md`：步骤、状态、验证证据。
 - `trace.jsonl`：每步 observation、action、verdict。
 

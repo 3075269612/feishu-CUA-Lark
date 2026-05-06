@@ -90,6 +90,8 @@ def build_html_summary(summary: dict[str, Any]) -> str:
         expected = "yes" if case.get("expected_met") else "no"
         trace_dir = escape(str(case.get("trace_dir") or ""))
         report_path = escape(str(case.get("report_path") or ""))
+        screenshots = case.get("screenshot_paths") if isinstance(case.get("screenshot_paths"), list) else []
+        screenshot_preview = _screenshot_preview(screenshots)
         rows.append(
             "<tr>"
             f"<td>{escape(str(case.get('id')))}</td>"
@@ -100,9 +102,10 @@ def build_html_summary(summary: dict[str, Any]) -> str:
             f"<td>{expected}</td>"
             f"<td><code>{trace_dir}</code></td>"
             f"<td><code>{report_path}</code></td>"
+            f"<td>{screenshot_preview}</td>"
             "</tr>"
         )
-    case_rows = "\n".join(rows) if rows else "<tr><td colspan=\"8\">No cases</td></tr>"
+    case_rows = "\n".join(rows) if rows else "<tr><td colspan=\"9\">No cases</td></tr>"
     failure_category = metrics.get("failure_category") if isinstance(metrics.get("failure_category"), dict) else {}
     failure_items = "".join(
         f"<li><code>{escape(str(key))}</code>: {escape(str(value))}</li>"
@@ -146,7 +149,7 @@ def build_html_summary(summary: dict[str, Any]) -> str:
   <ul>{failure_items}</ul>
   <h2>Cases</h2>
   <table>
-    <thead><tr><th>Case</th><th>Product</th><th>Status</th><th>Steps</th><th>Duration</th><th>Expected</th><th>Trace</th><th>Report</th></tr></thead>
+    <thead><tr><th>Case</th><th>Product</th><th>Status</th><th>Steps</th><th>Duration</th><th>Expected</th><th>Trace</th><th>Report</th><th>Screenshots</th></tr></thead>
     <tbody>{case_rows}</tbody>
   </table>
 </body>
@@ -156,3 +159,13 @@ def build_html_summary(summary: dict[str, Any]) -> str:
 
 def _metric_card(label: str, value: Any) -> str:
     return f"<div class=\"metric\"><span>{escape(label)}</span><strong>{escape(str(value))}</strong></div>"
+
+
+def _screenshot_preview(screenshots: list[Any]) -> str:
+    paths = [str(path) for path in screenshots if isinstance(path, str) and path]
+    if not paths:
+        return ""
+    first = escape(paths[0])
+    extra = len(paths) - 1
+    suffix = f"<br><span class=\"meta\">+{extra} more</span>" if extra > 0 else ""
+    return f"<code>{first}</code>{suffix}"

@@ -39,7 +39,18 @@ def test_write_eval_reports_also_writes_html(tmp_path) -> None:
         "finished_at": "2026-05-06T10:01:00",
         "output_dir": "runs/suite",
         "metrics": {"total_cases": 1, "success_cases": 1, "failed_cases": 0, "task_success_rate": 1.0},
-        "cases": [{"id": "im_case", "product": "im", "status": "pass", "steps": 2, "expected_met": True}],
+        "cases": [
+            {
+                "id": "im_case",
+                "product": "im",
+                "status": "pass",
+                "steps": 2,
+                "expected_met": True,
+                "trace_dir": "runs/suite/im_case/trace",
+                "report_path": "runs/suite/im_case/report.md",
+                "screenshot_paths": ["runs/suite/im_case/step_001.png", "runs/suite/im_case/step_002.png"],
+            }
+        ],
     }
 
     json_path, md_path = write_eval_reports(summary, tmp_path)
@@ -48,7 +59,12 @@ def test_write_eval_reports_also_writes_html(tmp_path) -> None:
     assert json_path.exists()
     assert md_path.exists()
     assert html_path.exists()
-    assert "FeishuWorld Eval Report" in html_path.read_text(encoding="utf-8")
+    html = html_path.read_text(encoding="utf-8")
+    assert "FeishuWorld Eval Report" in html
+    assert "runs/suite/im_case/trace" in html
+    assert "runs/suite/im_case/report.md" in html
+    assert "runs/suite/im_case/step_001.png" in html
+    assert "+1 more" in html
 
 
 def test_build_html_summary_escapes_case_values() -> None:

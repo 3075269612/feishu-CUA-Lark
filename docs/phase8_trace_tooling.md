@@ -2,6 +2,8 @@
 
 Phase 8 的目标是把已经跑通的 FeishuWorld trace 变成可复用数据资产，并为后续工具化和模型优化留出稳定接口。它不扩展真实 UI 功能，不接入新的运行时底座，也不做真实微调。
 
+最终交付入口见 `docs/final_delivery_checklist.md`；失败样本复盘见 `docs/failure_analysis.md`。
+
 ## 命令
 
 ```bash
